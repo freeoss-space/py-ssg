@@ -14,17 +14,18 @@ class InitCommand(BaseCommand):
     def __init__(self, folder_name: str):
         self.folder_name = folder_name
 
-    def _create_folder(self) -> None:
+    def _create_folder(self) -> bool:
         new_folder = Path.cwd() / self.folder_name
         if not os.path.exists(new_folder):
             os.mkdir(new_folder)
-            logger.info(f"Created folder: {self.folder_name}")
-            return
-        logger.warning(f"Folder already exists: {self.folder_name}")
+            self._info(f"Created folder: {self.folder_name}")
+            return True
+        self._warning(f"Folder already exists: {self.folder_name}")
+        return False
 
     def _init_structure(self, folder: Path) -> None:
         if os.path.isfile(folder / "py-ssg.toml"):
-            logger.warning("Config file already exists: py-ssg.toml")
+            self._error("Configuration files already exist!")
             return
 
         os.mkdir(folder / "content")
@@ -35,12 +36,15 @@ class InitCommand(BaseCommand):
             Path(str(files("pyssg") / "templates" / "py-ssg.toml")),
             folder / "py-ssg.toml",
         )
-        logger.info(f"Initialized structure in: {folder}")
+        self._success(f"Initialized structure in: {folder}")
 
     def execute(self) -> None:
         if self.folder_name == CURRENT_FOLDER_NAME:
             project_path = Path.cwd()
         else:
-            self._create_folder()
+            created_folder = self._create_folder()
+            if not created_folder:
+                return
             project_path = Path.cwd() / self.folder_name
+        self._info(f"Initializing structure in: {project_path}")
         self._init_structure(folder=project_path)
