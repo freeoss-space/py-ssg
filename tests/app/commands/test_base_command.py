@@ -2,9 +2,9 @@ from unittest.mock import call, patch
 
 import pytest
 
-from pyssg.modules.commands.base_command import BaseCommand
+from pyssg.commands.base_command import BaseCommand
 
-TEST_PATH = "pyssg.modules.commands.base_command"
+TEST_PATH = "pyssg.commands.base_command"
 
 TERM_LENGTH = 40
 CONTENT_WIDTH = TERM_LENGTH - 1
