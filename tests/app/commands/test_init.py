@@ -1,8 +1,8 @@
 from unittest.mock import patch
 
-from pyssg.modules.commands.init import InitCommand
+from pyssg.commands.init import InitCommand
 
-TEST_PATH = "pyssg.modules.commands.init"
+TEST_PATH = "pyssg.commands.init"
 
 
 class TestCreateFolder:

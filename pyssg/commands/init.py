@@ -4,7 +4,7 @@ import shutil
 from importlib.resources import files
 from pathlib import Path
 
-from pyssg.modules.commands.base_command import BaseCommand
+from pyssg.commands.base_command import BaseCommand
 
 CURRENT_FOLDER_NAME = "."
 logger = logging.getLogger(__name__)
