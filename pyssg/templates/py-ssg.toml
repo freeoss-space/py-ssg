@@ -1,0 +1,8 @@
+[py-ssg]
+name = "Blog Name"
+url = "https://yourblog.dev"
+description = "My blog"
+
+[[py-ssg.authors]]
+name = "Your Name"
+email = "your@email.com"

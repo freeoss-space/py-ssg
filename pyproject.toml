@@ -6,10 +6,26 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "mistune>=3.2.0",
+    "rich>=14.3.3",
+    "typer>=0.24.1",
 ]
+
+[project.scripts]
+py-ssg = "pyssg.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pyssg"]
+
+[tool.ruff.lint]
+select = ["I", "F"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "ruff>=0.15.7",
     "ty>=0.0.24",
