@@ -4,6 +4,9 @@ url = "https://yourblog.dev"
 description = "My blog"
 cache = true
 
+[py-ssg.server]
+port = 8000
+
 [py-ssg.syntax]
 enabled = true
 theme_light = "friendly"

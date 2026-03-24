@@ -54,6 +54,17 @@ class SyntaxConfig:
 
 
 @dataclass
+class ServerConfig:
+    port: int = 8000
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ServerConfig:
+        return cls(
+            port=int(data.get("port", 8000)),
+        )
+
+
+@dataclass
 class SiteConfig:
     name: str = ""
     url: str = ""
@@ -62,6 +73,7 @@ class SiteConfig:
     feeds: list[FeedConfig] = field(default_factory=list)
     cache: bool = True
     syntax: SyntaxConfig = field(default_factory=SyntaxConfig)
+    server: ServerConfig = field(default_factory=ServerConfig)
 
     @classmethod
     def load(cls, project_dir: Path) -> SiteConfig:
@@ -77,6 +89,7 @@ class SiteConfig:
         authors = [AuthorConfig.from_dict(a) for a in data.get("authors", [])]
         feeds = [FeedConfig.from_dict(f) for f in data.get("feeds", [])]
         syntax = SyntaxConfig.from_dict(data.get("syntax", {}))
+        server = ServerConfig.from_dict(data.get("server", {}))
         return cls(
             name=str(data.get("name", "")),
             url=str(data.get("url", "")),
@@ -85,4 +98,5 @@ class SiteConfig:
             feeds=feeds,
             cache=bool(data.get("cache", True)),
             syntax=syntax,
+            server=server,
         )

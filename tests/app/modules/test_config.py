@@ -1,7 +1,13 @@
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
-from pyssg.modules.config import AuthorConfig, FeedConfig, SiteConfig, SyntaxConfig
+from pyssg.modules.config import (
+    AuthorConfig,
+    FeedConfig,
+    ServerConfig,
+    SiteConfig,
+    SyntaxConfig,
+)
 
 TEST_PATH = "pyssg.modules.config"
 
@@ -74,6 +80,23 @@ class TestSyntaxConfig:
         assert config.theme_dark == "monokai"
 
 
+class TestServerConfig:
+    def test_default_values(self):
+        config = ServerConfig()
+
+        assert config.port == 8000
+
+    def test_from_dict(self):
+        config = ServerConfig.from_dict({"port": 9000})
+
+        assert config.port == 9000
+
+    def test_from_dict_defaults(self):
+        config = ServerConfig.from_dict({})
+
+        assert config.port == 8000
+
+
 class TestSiteConfig:
     def test_default_values(self):
         config = SiteConfig()
@@ -85,6 +108,7 @@ class TestSiteConfig:
         assert config.feeds == []
         assert config.cache is True
         assert config.syntax == SyntaxConfig()
+        assert config.server == ServerConfig()
 
     def test_from_dict_full(self):
         data = {
@@ -118,6 +142,7 @@ class TestSiteConfig:
         assert config.feeds == []
         assert config.cache is True
         assert config.syntax == SyntaxConfig()
+        assert config.server == ServerConfig()
 
     def test_from_dict_syntax_section(self):
         config = SiteConfig.from_dict(
@@ -164,6 +189,16 @@ class TestSiteConfig:
         assert len(config.authors) == 2
         assert config.authors[0].name == "Alice"
         assert config.authors[1].name == "Bob"
+
+    def test_from_dict_server_section(self):
+        config = SiteConfig.from_dict({"server": {"port": 3000}})
+
+        assert config.server.port == 3000
+
+    def test_from_dict_server_defaults_when_missing(self):
+        config = SiteConfig.from_dict({})
+
+        assert config.server.port == 8000
 
     def test_from_dict_multiple_feeds(self):
         data = {
