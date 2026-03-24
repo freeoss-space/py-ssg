@@ -23,6 +23,7 @@ def _setup_path_and_os(mock_path, mock_os, template_files=None, component_files=
 
     mock_os.listdir.side_effect = listdir_side_effect
     mock_os.path.join.side_effect = lambda d, f: f"{d}/{f}"
+    mock_os.path.exists.return_value = False
 
 
 def _setup_cache(mock_cache_cls):

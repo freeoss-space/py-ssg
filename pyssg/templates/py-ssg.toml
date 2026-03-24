@@ -6,3 +6,15 @@ description = "My blog"
 [[py-ssg.authors]]
 name = "Your Name"
 email = "your@email.com"
+
+[[py-ssg.feeds]]
+title = "Blog Name"
+description = "My blog feed"
+output = "feed.xml"
+
+# Example: a tag-filtered feed
+# [[py-ssg.feeds]]
+# title = "Blog Name - Tech"
+# description = "Tech posts"
+# output = "tech.xml"
+# tags = ["tech"]
