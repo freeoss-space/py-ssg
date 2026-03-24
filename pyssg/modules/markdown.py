@@ -1,6 +1,7 @@
 import os
 import re
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -146,6 +147,38 @@ class MarkdownCollection:
         return any(item.filename == key for item in self._items)
 
 
+_worker_render_markdown: Callable[[str], str] | None = None
+_worker_toc_generator: TocGenerator | None = None
+
+
+def _init_worker(
+    syntax_enabled: bool,
+    theme_light: str,
+    theme_dark: str,
+    toc_enabled: bool,
+    toc_max_depth: int,
+) -> None:
+    global _worker_render_markdown, _worker_toc_generator
+    _worker_render_markdown = None
+    _worker_toc_generator = None
+    if syntax_enabled:
+        from pyssg.modules.syntax import SyntaxHighlighter
+
+        hightlighter = SyntaxHighlighter(theme_light=theme_light, theme_dark=theme_dark)
+        _worker_render_markdown = hightlighter.render_markdown
+    if toc_enabled:
+        _worker_toc_generator = TocGenerator(max_depth=toc_max_depth)
+
+
+def _parse_file_worker(item: tuple[str, str]) -> MarkdownContent:
+    return MarkdownContent.from_raw(
+        item[0],
+        item[1],
+        render_markdown=_worker_render_markdown,
+        toc_generator=_worker_toc_generator,
+    )
+
+
 class MarkdownParser:
     def __init__(
         self,
@@ -157,14 +190,30 @@ class MarkdownParser:
         self.render_markdown = render_markdown
         self.toc_generator = toc_generator
 
-    def parse(self) -> MarkdownCollection:
-        collection = MarkdownCollection()
+    def _read_files(self) -> list[tuple[str, str]]:
+        items = []
         for filename in os.listdir(self.content_dir):
             if not filename.endswith(".md"):
                 continue
             filepath = os.path.join(self.content_dir, filename)
             with open(filepath) as f:
                 raw = f.read()
+            items.append((filename, raw))
+        return items
+
+    def parse(
+        self,
+        workers: int = 1,
+        syntax_config: dict[str, Any] | None = None,
+        toc_config: dict[str, Any] | None = None,
+    ) -> MarkdownCollection:
+        if workers > 1 and (syntax_config is not None or toc_config is not None):
+            return self._parse_parallel(workers, syntax_config, toc_config)
+        return self._parse_sequential()
+
+    def _parse_sequential(self) -> MarkdownCollection:
+        collection = MarkdownCollection()
+        for filename, raw in self._read_files():
             collection.add(
                 MarkdownContent.from_raw(
                     filename,
@@ -173,4 +222,40 @@ class MarkdownParser:
                     toc_generator=self.toc_generator,
                 )
             )
+        return collection
+
+    def _parse_parallel(
+        self,
+        workers: int,
+        syntax_config: dict[str, Any] | None,
+        toc_config: dict[str, Any] | None,
+    ) -> MarkdownCollection:
+        items = self._read_files()
+
+        syntax_enabled = bool(syntax_config and syntax_config.get("enabled"))
+        theme_light = (
+            syntax_config.get("theme_light", "friendly")
+            if syntax_config
+            else "friendly"
+        )
+        theme_dark = (
+            syntax_config.get("theme_dark", "monokai") if syntax_config else "monokai"
+        )
+        toc_enabled = bool(toc_config and toc_config.get("enabled"))
+        toc_max_depth = toc_config.get("max_depth", 3) if toc_config else 3
+
+        collection = MarkdownCollection()
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_init_worker,
+            initargs=(
+                syntax_enabled,
+                theme_light,
+                theme_dark,
+                toc_enabled,
+                toc_max_depth,
+            ),
+        ) as executor:
+            for content in executor.map(_parse_file_worker, items, chunksize=64):
+                collection.add(content)
         return collection

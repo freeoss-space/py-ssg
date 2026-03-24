@@ -60,7 +60,19 @@ class BuildCommand(BaseCommand):
             render_markdown=render_markdown,
             toc_generator=toc_generator,
         )
-        collection = parser.parse()
+        workers = os.cpu_count() or 1
+        collection = parser.parse(
+            workers=workers,
+            syntax_config={
+                "enabled": config.syntax.enabled,
+                "theme_light": config.syntax.theme_light,
+                "theme_dark": config.syntax.theme_dark,
+            },
+            toc_config={
+                "enabled": config.toc.enabled,
+                "max_depth": config.toc.max_depth,
+            },
+        )
         parsing_time = time.perf_counter() - parsing_start
 
         context.content = collection
