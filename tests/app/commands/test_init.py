@@ -36,12 +36,13 @@ class TestCreateFolder:
 
 
 class TestInitStructure:
+    @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.Path")
     @patch(f"{TEST_PATH}.files")
     @patch(f"{TEST_PATH}.shutil")
     @patch(f"{TEST_PATH}.os")
     def test_creates_folders_and_files(
-        self, mock_os, mock_shutil, mock_files, mock_path, tmp_path
+        self, mock_os, mock_shutil, mock_files, mock_path, mock_cache_cls, tmp_path
     ):
         command = InitCommand(folder_name=".")
         mock_os.path.isfile.return_value = False
@@ -61,6 +62,22 @@ class TestInitStructure:
             expected_src, tmp_path / "py-ssg.toml"
         )
         mock_success.assert_called_once_with(f"Initialized structure in: {tmp_path}")
+
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.Path")
+    @patch(f"{TEST_PATH}.files")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.os")
+    def test_creates_cache_file(
+        self, mock_os, mock_shutil, mock_files, mock_path, mock_cache_cls, tmp_path
+    ):
+        command = InitCommand(folder_name=".")
+        mock_os.path.isfile.return_value = False
+
+        with patch.object(command, "_success"):
+            command._init_structure(folder=tmp_path)
+
+        mock_cache_cls.create.assert_called_once_with(cache_dir=tmp_path)
 
     @patch(f"{TEST_PATH}.os")
     def test_errors_when_config_exists(self, mock_os, tmp_path):
