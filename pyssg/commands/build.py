@@ -6,7 +6,7 @@ from pyssg.commands.base_command import BaseCommand
 from pyssg.modules.cache import BuildCache
 from pyssg.modules.config import SiteConfig
 from pyssg.modules.html import HtmlTemplateEngine
-from pyssg.modules.markdown import MarkdownParser
+from pyssg.modules.markdown import MarkdownParser, TocGenerator
 from pyssg.modules.rss import RssFeedGenerator
 from pyssg.modules.syntax import SyntaxHighlighter
 
@@ -34,11 +34,16 @@ class BuildCommand(BaseCommand):
             )
             render_markdown = highlighter.render_markdown
 
+        toc_generator = None
+        if config.toc.enabled:
+            toc_generator = TocGenerator(max_depth=config.toc.max_depth)
+
         self._info("Parsing markdown files...")
         parsing_start = time.perf_counter()
         parser = MarkdownParser(
             content_dir=project_dir / "content",
             render_markdown=render_markdown,
+            toc_generator=toc_generator,
         )
         collection = parser.parse()
         parsing_time = time.perf_counter() - parsing_start

@@ -7,6 +7,7 @@ from pyssg.modules.config import (
     ServerConfig,
     SiteConfig,
     SyntaxConfig,
+    TocConfig,
 )
 
 TEST_PATH = "pyssg.modules.config"
@@ -274,3 +275,60 @@ cache = false
             config = SiteConfig.load(Path("/project"))
 
         assert config.cache is False
+
+
+class TestTocConfig:
+    def test_default_values(self):
+        config = TocConfig()
+
+        assert config.enabled is False
+        assert config.max_depth == 3
+
+    def test_from_dict(self):
+        config = TocConfig.from_dict({"enabled": True, "max_depth": 2})
+
+        assert config.enabled is True
+        assert config.max_depth == 2
+
+    def test_from_dict_defaults(self):
+        config = TocConfig.from_dict({})
+
+        assert config.enabled is False
+        assert config.max_depth == 3
+
+
+class TestSiteConfigToc:
+    def test_default_toc(self):
+        config = SiteConfig()
+
+        assert config.toc == TocConfig()
+
+    def test_from_dict_toc_section(self):
+        config = SiteConfig.from_dict({"toc": {"enabled": True, "max_depth": 2}})
+
+        assert config.toc.enabled is True
+        assert config.toc.max_depth == 2
+
+    def test_from_dict_toc_defaults_when_missing(self):
+        config = SiteConfig.from_dict({})
+
+        assert config.toc.enabled is False
+        assert config.toc.max_depth == 3
+
+    def test_loads_toc_from_toml(self):
+        toml_content = b"""
+[py-ssg]
+name = "Blog"
+
+[py-ssg.toc]
+enabled = true
+max_depth = 4
+"""
+        with (
+            patch(f"{TEST_PATH}.Path.exists", return_value=True),
+            patch(f"{TEST_PATH}.open", mock_open(read_data=toml_content)),
+        ):
+            config = SiteConfig.load(Path("/project"))
+
+        assert config.toc.enabled is True
+        assert config.toc.max_depth == 4

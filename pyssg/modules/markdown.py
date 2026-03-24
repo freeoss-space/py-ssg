@@ -1,14 +1,66 @@
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from xml.etree.ElementTree import Element, SubElement, tostring
 
 import frontmatter
 import mistune
+from mistune.toc import add_toc_hook
 
 _AUTHOR_KEYS = frozenset({"author", "author_email", "author_avatar", "author_url"})
+
+
+def _slugify(text: str) -> str:
+    slug = text.lower()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s]+", "-", slug).strip("-")
+    return slug
+
+
+class TocGenerator:
+    def __init__(self, max_depth: int = 3):
+        self.max_depth = max_depth
+        self._md = mistune.create_markdown()
+        add_toc_hook(
+            self._md,
+            max_level=self.max_depth,
+            heading_id=lambda token, index: _slugify(token["text"]),
+        )
+
+    def generate(self, markdown_text: str) -> str:
+        _, state = self._md.parse(markdown_text)
+        toc_items: list[tuple[int, str, str]] = state.env.get("toc_items", [])
+
+        if not toc_items:
+            return ""
+
+        nav = Element("nav")
+        nav.set("class", "toc")
+        root_ul = SubElement(nav, "ul")
+
+        stack: list[tuple[Element, int]] = [(root_ul, toc_items[0][0])]
+
+        for level, heading_id, text in toc_items:
+            while level < stack[-1][1] and len(stack) > 1:
+                stack.pop()
+
+            if level > stack[-1][1]:
+                parent_ul = stack[-1][0]
+                last_li = list(parent_ul)[-1]
+                new_ul = SubElement(last_li, "ul")
+                stack.append((new_ul, level))
+
+            current_ul = stack[-1][0]
+            li = SubElement(current_ul, "li")
+            a = SubElement(li, "a")
+            a.set("href", f"#{heading_id}")
+            a.text = text
+
+        return tostring(nav, encoding="unicode", method="html")
 
 
 @dataclass
@@ -37,6 +89,7 @@ class MarkdownContent:
     tags: list[str] = field(default_factory=list)
     author: ContentAuthor = field(default_factory=ContentAuthor)
     custom_fields: SimpleNamespace = field(default_factory=SimpleNamespace)
+    toc: str = ""
 
     @classmethod
     def from_raw(
@@ -44,6 +97,7 @@ class MarkdownContent:
         filename: str,
         raw: str,
         render_markdown: Callable[[str], str] | None = None,
+        toc_generator: TocGenerator | None = None,
     ) -> MarkdownContent:
         post = frontmatter.loads(raw)
         known_fields = {f.name for f in fields(cls)} - {
@@ -59,6 +113,7 @@ class MarkdownContent:
         raw_tags = post.get("tags")
         tags = [str(t) for t in raw_tags] if isinstance(raw_tags, list) else []
         render = render_markdown or mistune.html
+        toc = toc_generator.generate(post.content) if toc_generator else ""
         return cls(
             filename=filename,
             html=str(render(post.content)),
@@ -67,6 +122,7 @@ class MarkdownContent:
             tags=tags,
             author=ContentAuthor.from_post(post),
             custom_fields=custom,
+            toc=toc,
         )
 
 
@@ -95,9 +151,11 @@ class MarkdownParser:
         self,
         content_dir: Path,
         render_markdown: Callable[[str], str] | None = None,
+        toc_generator: TocGenerator | None = None,
     ):
         self.content_dir = content_dir
         self.render_markdown = render_markdown
+        self.toc_generator = toc_generator
 
     def parse(self) -> MarkdownCollection:
         collection = MarkdownCollection()
@@ -109,7 +167,10 @@ class MarkdownParser:
                 raw = f.read()
             collection.add(
                 MarkdownContent.from_raw(
-                    filename, raw, render_markdown=self.render_markdown
+                    filename,
+                    raw,
+                    render_markdown=self.render_markdown,
+                    toc_generator=self.toc_generator,
                 )
             )
         return collection
