@@ -54,8 +54,9 @@ class TestInitStructure:
         mock_os.path.isfile.assert_called_once_with(tmp_path / "py-ssg.toml")
         mock_os.mkdir.assert_any_call(tmp_path / "content")
         mock_os.mkdir.assert_any_call(tmp_path / "templates")
+        mock_os.mkdir.assert_any_call(tmp_path / "components")
         mock_os.mkdir.assert_any_call(tmp_path / "output")
-        assert mock_os.mkdir.call_count == 3
+        assert mock_os.mkdir.call_count == 4
         mock_shutil.copy2.assert_called_once_with(
             expected_src, tmp_path / "py-ssg.toml"
         )

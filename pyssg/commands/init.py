@@ -30,6 +30,7 @@ class InitCommand(BaseCommand):
 
         os.mkdir(folder / "content")
         os.mkdir(folder / "templates")
+        os.mkdir(folder / "components")
         os.mkdir(folder / "output")
 
         shutil.copy2(
