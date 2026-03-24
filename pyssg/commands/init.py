@@ -5,6 +5,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from pyssg.commands.base_command import BaseCommand
+from pyssg.modules.cache import BuildCache
 
 CURRENT_FOLDER_NAME = "."
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class InitCommand(BaseCommand):
             Path(str(files("pyssg") / "templates" / "py-ssg.toml")),
             folder / "py-ssg.toml",
         )
+        BuildCache.create(cache_dir=folder)
         self._success(f"Initialized structure in: {folder}")
 
     def execute(self) -> None:
