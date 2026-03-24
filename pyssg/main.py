@@ -4,6 +4,7 @@ import typer
 
 from pyssg.commands.build import BuildCommand
 from pyssg.commands.init import InitCommand
+from pyssg.commands.serve import ServeCommand
 
 LOGGER = logging.getLogger(__name__)
 app = typer.Typer()
@@ -28,6 +29,12 @@ def init(folder_name: str = typer.Argument(default=".")) -> None:
 def build() -> None:
     build_command = BuildCommand()
     build_command.execute()
+
+
+@app.command()
+def serve(port: int | None = typer.Option(default=None)) -> None:
+    serve_command = ServeCommand(port=port)
+    serve_command.execute()
 
 
 if __name__ == "__main__":
