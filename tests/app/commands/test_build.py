@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, mock_open, patch
 
 from pyssg.commands.build import BuildCommand
-from pyssg.modules.config import SiteConfig
+from pyssg.modules.config import SiteConfig, SyntaxConfig
 from pyssg.modules.markdown import MarkdownCollection, MarkdownContent
 
 TEST_POST = MarkdownContent(filename="post.md", html="<p>Hi</p>", title="Post")
@@ -10,11 +10,13 @@ TEST_PATH = "pyssg.commands.build"
 
 
 def _default_config(**overrides):
+    syntax = overrides.get("syntax", SyntaxConfig(enabled=False))
     return SiteConfig(
         name=overrides.get("name", ""),
         url=overrides.get("url", ""),
         description=overrides.get("description", ""),
         cache=overrides.get("cache", True),
+        syntax=syntax,
     )
 
 
@@ -69,7 +71,9 @@ class TestExecute:
         with patch.object(command, "_info"), patch.object(command, "_success"):
             command.execute()
 
-        mock_parser_cls.assert_called_once_with(content_dir="/project/content")
+        mock_parser_cls.assert_called_once_with(
+            content_dir="/project/content", render_markdown=None
+        )
         mock_parser_cls.return_value.parse.assert_called_once()
 
     @patch(f"{TEST_PATH}.SiteConfig")
@@ -757,3 +761,177 @@ class TestSummary:
         mock_success.assert_any_call("Parsing time: 0.050s")
         mock_success.assert_any_call("Rendering time: 0.100s")
         mock_success.assert_any_call("Total time: 0.200s")
+
+
+class TestSyntaxHighlighting:
+    @patch(f"{TEST_PATH}.SyntaxHighlighter")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open)
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_passes_render_markdown_to_parser(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_highlighter_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(syntax=SyntaxConfig())
+        mock_highlighter = mock_highlighter_cls.return_value
+        mock_highlighter.get_stylesheet.return_value = ""
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_parser_cls.assert_called_once_with(
+            content_dir="/project/content",
+            render_markdown=mock_highlighter.render_markdown,
+        )
+
+    @patch(f"{TEST_PATH}.SyntaxHighlighter")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open)
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_writes_stylesheet_to_output_dir(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_highlighter_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(syntax=SyntaxConfig())
+        mock_highlighter = mock_highlighter_cls.return_value
+        mock_highlighter.get_stylesheet.return_value = ".highlight { color: red; }"
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_os.path.join.assert_any_call("/project/output", "syntax.css")
+
+    @patch(f"{TEST_PATH}.SyntaxHighlighter")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open)
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_creates_highlighter_with_config_themes(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_highlighter_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        config = _default_config(
+            syntax=SyntaxConfig(enabled=True, theme_light="tango", theme_dark="dracula")
+        )
+        mock_config_cls.load.return_value = config
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_highlighter_cls.return_value.get_stylesheet.return_value = ""
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_highlighter_cls.assert_called_once_with(
+            theme_light="tango",
+            theme_dark="dracula",
+        )
+
+    @patch(f"{TEST_PATH}.SyntaxHighlighter")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_skips_highlighting_when_disabled(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_highlighter_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(
+            syntax=SyntaxConfig(enabled=False)
+        )
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_highlighter_cls.assert_not_called()
+
+    @patch(f"{TEST_PATH}.SyntaxHighlighter")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_does_not_pass_render_markdown_when_disabled(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_highlighter_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(
+            syntax=SyntaxConfig(enabled=False)
+        )
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_parser_cls.assert_called_once_with(
+            content_dir="/project/content",
+            render_markdown=None,
+        )

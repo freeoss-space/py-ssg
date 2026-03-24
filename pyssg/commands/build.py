@@ -8,6 +8,7 @@ from pyssg.modules.config import SiteConfig
 from pyssg.modules.html import HtmlTemplateEngine
 from pyssg.modules.markdown import MarkdownParser
 from pyssg.modules.rss import RssFeedGenerator
+from pyssg.modules.syntax import SyntaxHighlighter
 
 
 class BuildCommand(BaseCommand):
@@ -24,9 +25,21 @@ class BuildCommand(BaseCommand):
         cache = BuildCache(cache_dir=project_dir, enabled=config.cache)
         cache.load()
 
+        highlighter = None
+        render_markdown = None
+        if config.syntax.enabled:
+            highlighter = SyntaxHighlighter(
+                theme_light=config.syntax.theme_light,
+                theme_dark=config.syntax.theme_dark,
+            )
+            render_markdown = highlighter.render_markdown
+
         self._info("Parsing markdown files...")
         parsing_start = time.perf_counter()
-        parser = MarkdownParser(content_dir=project_dir / "content")
+        parser = MarkdownParser(
+            content_dir=project_dir / "content",
+            render_markdown=render_markdown,
+        )
         collection = parser.parse()
         parsing_time = time.perf_counter() - parsing_start
 
@@ -73,6 +86,11 @@ class BuildCommand(BaseCommand):
                 cache.update(filename, template)
 
             built_files += 1
+
+        if highlighter:
+            css_path = os.path.join(output_dir, "syntax.css")
+            with open(css_path, "w") as f:
+                f.write(highlighter.get_stylesheet())
 
         rendering_time = time.perf_counter() - rendering_start
 

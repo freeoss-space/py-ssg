@@ -11,7 +11,7 @@ class AuthorConfig:
     email: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict) -> "AuthorConfig":
+    def from_dict(cls, data: dict) -> AuthorConfig:
         return cls(
             name=str(data.get("name", "")),
             email=str(data.get("email", "")),
@@ -26,7 +26,7 @@ class FeedConfig:
     tags: list[str] | None = None
 
     @classmethod
-    def from_dict(cls, data: dict) -> "FeedConfig":
+    def from_dict(cls, data: dict) -> FeedConfig:
         tags = data.get("tags")
         if isinstance(tags, list):
             tags = [str(t) for t in tags]
@@ -39,6 +39,21 @@ class FeedConfig:
 
 
 @dataclass
+class SyntaxConfig:
+    enabled: bool = True
+    theme_light: str = "friendly"
+    theme_dark: str = "monokai"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> SyntaxConfig:
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            theme_light=str(data.get("theme_light", "friendly")),
+            theme_dark=str(data.get("theme_dark", "monokai")),
+        )
+
+
+@dataclass
 class SiteConfig:
     name: str = ""
     url: str = ""
@@ -46,9 +61,10 @@ class SiteConfig:
     authors: list[AuthorConfig] = field(default_factory=list)
     feeds: list[FeedConfig] = field(default_factory=list)
     cache: bool = True
+    syntax: SyntaxConfig = field(default_factory=SyntaxConfig)
 
     @classmethod
-    def load(cls, project_dir: Path) -> "SiteConfig":
+    def load(cls, project_dir: Path) -> SiteConfig:
         config_path = project_dir / CONFIG_FILENAME
         if not config_path.exists():
             return cls()
@@ -57,9 +73,10 @@ class SiteConfig:
         return cls.from_dict(data.get("py-ssg", {}))
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SiteConfig":
+    def from_dict(cls, data: dict) -> SiteConfig:
         authors = [AuthorConfig.from_dict(a) for a in data.get("authors", [])]
         feeds = [FeedConfig.from_dict(f) for f in data.get("feeds", [])]
+        syntax = SyntaxConfig.from_dict(data.get("syntax", {}))
         return cls(
             name=str(data.get("name", "")),
             url=str(data.get("url", "")),
@@ -67,4 +84,5 @@ class SiteConfig:
             authors=authors,
             feeds=feeds,
             cache=bool(data.get("cache", True)),
+            syntax=syntax,
         )

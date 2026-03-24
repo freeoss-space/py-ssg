@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
-from pyssg.modules.config import AuthorConfig, FeedConfig, SiteConfig
+from pyssg.modules.config import AuthorConfig, FeedConfig, SiteConfig, SyntaxConfig
 
 TEST_PATH = "pyssg.modules.config"
 
@@ -49,6 +49,31 @@ class TestFeedConfig:
         assert cfg.description == ""
 
 
+class TestSyntaxConfig:
+    def test_default_values(self):
+        config = SyntaxConfig()
+
+        assert config.enabled is True
+        assert config.theme_light == "friendly"
+        assert config.theme_dark == "monokai"
+
+    def test_from_dict(self):
+        config = SyntaxConfig.from_dict(
+            {"enabled": False, "theme_light": "tango", "theme_dark": "dracula"}
+        )
+
+        assert config.enabled is False
+        assert config.theme_light == "tango"
+        assert config.theme_dark == "dracula"
+
+    def test_from_dict_defaults(self):
+        config = SyntaxConfig.from_dict({})
+
+        assert config.enabled is True
+        assert config.theme_light == "friendly"
+        assert config.theme_dark == "monokai"
+
+
 class TestSiteConfig:
     def test_default_values(self):
         config = SiteConfig()
@@ -59,6 +84,7 @@ class TestSiteConfig:
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True
+        assert config.syntax == SyntaxConfig()
 
     def test_from_dict_full(self):
         data = {
@@ -91,6 +117,29 @@ class TestSiteConfig:
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True
+        assert config.syntax == SyntaxConfig()
+
+    def test_from_dict_syntax_section(self):
+        config = SiteConfig.from_dict(
+            {
+                "syntax": {
+                    "enabled": False,
+                    "theme_light": "tango",
+                    "theme_dark": "dracula",
+                }
+            }
+        )
+
+        assert config.syntax.enabled is False
+        assert config.syntax.theme_light == "tango"
+        assert config.syntax.theme_dark == "dracula"
+
+    def test_from_dict_syntax_defaults_when_missing(self):
+        config = SiteConfig.from_dict({})
+
+        assert config.syntax.enabled is True
+        assert config.syntax.theme_light == "friendly"
+        assert config.syntax.theme_dark == "monokai"
 
     def test_from_dict_cache_defaults_to_true(self):
         config = SiteConfig.from_dict({"name": "Blog"})
@@ -147,6 +196,11 @@ email = "jane@example.com"
 [[py-ssg.feeds]]
 title = "Feed"
 output = "feed.xml"
+
+[py-ssg.syntax]
+enabled = true
+theme_light = "tango"
+theme_dark = "dracula"
 """
         with (
             patch(f"{TEST_PATH}.Path.exists", return_value=True),
@@ -162,6 +216,9 @@ output = "feed.xml"
         assert config.authors[0].name == "Jane"
         assert len(config.feeds) == 1
         assert config.feeds[0].title == "Feed"
+        assert config.syntax.enabled is True
+        assert config.syntax.theme_light == "tango"
+        assert config.syntax.theme_dark == "dracula"
 
     def test_returns_defaults_when_file_missing(self):
         with patch(f"{TEST_PATH}.Path.exists", return_value=False):
