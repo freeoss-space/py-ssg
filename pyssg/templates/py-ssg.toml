@@ -12,6 +12,10 @@ enabled = true
 theme_light = "friendly"
 theme_dark = "monokai"
 
+[py-ssg.toc]
+enabled = false
+max_depth = 3
+
 [[py-ssg.authors]]
 name = "Your Name"
 email = "your@email.com"

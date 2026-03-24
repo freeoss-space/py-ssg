@@ -54,6 +54,19 @@ class SyntaxConfig:
 
 
 @dataclass
+class TocConfig:
+    enabled: bool = False
+    max_depth: int = 3
+
+    @classmethod
+    def from_dict(cls, data: dict) -> TocConfig:
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            max_depth=int(data.get("max_depth", 3)),
+        )
+
+
+@dataclass
 class ServerConfig:
     port: int = 8000
 
@@ -74,6 +87,7 @@ class SiteConfig:
     cache: bool = True
     syntax: SyntaxConfig = field(default_factory=SyntaxConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    toc: TocConfig = field(default_factory=TocConfig)
 
     @classmethod
     def load(cls, project_dir: Path) -> SiteConfig:
@@ -90,6 +104,7 @@ class SiteConfig:
         feeds = [FeedConfig.from_dict(f) for f in data.get("feeds", [])]
         syntax = SyntaxConfig.from_dict(data.get("syntax", {}))
         server = ServerConfig.from_dict(data.get("server", {}))
+        toc = TocConfig.from_dict(data.get("toc", {}))
         return cls(
             name=str(data.get("name", "")),
             url=str(data.get("url", "")),
@@ -99,4 +114,5 @@ class SiteConfig:
             cache=bool(data.get("cache", True)),
             syntax=syntax,
             server=server,
+            toc=toc,
         )

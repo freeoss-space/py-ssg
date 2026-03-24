@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, mock_open, patch
 
 from pyssg.commands.build import BuildCommand
-from pyssg.modules.config import SiteConfig, SyntaxConfig
+from pyssg.modules.config import SiteConfig, SyntaxConfig, TocConfig
 from pyssg.modules.markdown import MarkdownCollection, MarkdownContent
 
 TEST_POST = MarkdownContent(filename="post.md", html="<p>Hi</p>", title="Post")
@@ -11,12 +11,14 @@ TEST_PATH = "pyssg.commands.build"
 
 def _default_config(**overrides):
     syntax = overrides.get("syntax", SyntaxConfig(enabled=False))
+    toc = overrides.get("toc", TocConfig(enabled=False))
     return SiteConfig(
         name=overrides.get("name", ""),
         url=overrides.get("url", ""),
         description=overrides.get("description", ""),
         cache=overrides.get("cache", True),
         syntax=syntax,
+        toc=toc,
     )
 
 
@@ -72,7 +74,9 @@ class TestExecute:
             command.execute()
 
         mock_parser_cls.assert_called_once_with(
-            content_dir="/project/content", render_markdown=None
+            content_dir="/project/content",
+            render_markdown=None,
+            toc_generator=None,
         )
         mock_parser_cls.return_value.parse.assert_called_once()
 
@@ -797,6 +801,7 @@ class TestSyntaxHighlighting:
         mock_parser_cls.assert_called_once_with(
             content_dir="/project/content",
             render_markdown=mock_highlighter.render_markdown,
+            toc_generator=None,
         )
 
     @patch(f"{TEST_PATH}.SyntaxHighlighter")
@@ -934,4 +939,101 @@ class TestSyntaxHighlighting:
         mock_parser_cls.assert_called_once_with(
             content_dir="/project/content",
             render_markdown=None,
+            toc_generator=None,
         )
+
+
+class TestTocBuild:
+    @patch(f"{TEST_PATH}.TocGenerator")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_creates_toc_generator_when_enabled(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_toc_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(
+            toc=TocConfig(enabled=True, max_depth=2)
+        )
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_toc_cls.assert_called_once_with(max_depth=2)
+
+    @patch(f"{TEST_PATH}.TocGenerator")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_passes_toc_generator_to_parser(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_toc_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(
+            toc=TocConfig(enabled=True, max_depth=3)
+        )
+        mock_toc_gen = mock_toc_cls.return_value
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        call_kwargs = mock_parser_cls.call_args[1]
+        assert call_kwargs["toc_generator"] is mock_toc_gen
+
+    @patch(f"{TEST_PATH}.TocGenerator")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_no_toc_generator_when_disabled(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_toc_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(
+            toc=TocConfig(enabled=False)
+        )
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_toc_cls.assert_not_called()
+        call_kwargs = mock_parser_cls.call_args[1]
+        assert call_kwargs["toc_generator"] is None

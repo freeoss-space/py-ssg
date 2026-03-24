@@ -7,6 +7,7 @@ from pyssg.modules.markdown import (
     MarkdownCollection,
     MarkdownContent,
     MarkdownParser,
+    TocGenerator,
 )
 
 TEST_PATH = "pyssg.modules.markdown"
@@ -280,3 +281,116 @@ Content here.
         assert post.timestamp == ""
         assert post.tags == []
         assert "<p>Just plain markdown</p>" in post.html
+
+
+class TestTocGenerator:
+    def test_extracts_headings_from_markdown(self):
+        md = "# Title\n\n## Section 1\n\n## Section 2\n"
+        gen = TocGenerator(max_depth=3)
+
+        toc = gen.generate(md)
+
+        assert '<nav class="toc">' in toc
+        assert "Title" in toc
+        assert "Section 1" in toc
+        assert "Section 2" in toc
+
+    def test_generates_nested_list(self):
+        md = "# Title\n\n## Sub\n\n### Deep\n"
+        gen = TocGenerator(max_depth=3)
+
+        toc = gen.generate(md)
+
+        assert "<ul>" in toc
+        assert "<li>" in toc
+        assert "Title" in toc
+        assert "Sub" in toc
+        assert "Deep" in toc
+
+    def test_respects_max_depth(self):
+        md = "# H1\n\n## H2\n\n### H3\n\n#### H4\n"
+        gen = TocGenerator(max_depth=2)
+
+        toc = gen.generate(md)
+
+        assert "H1" in toc
+        assert "H2" in toc
+        assert "H3" not in toc
+        assert "H4" not in toc
+
+    def test_returns_empty_string_when_no_headings(self):
+        md = "Just a paragraph.\n"
+        gen = TocGenerator(max_depth=3)
+
+        toc = gen.generate(md)
+
+        assert toc == ""
+
+    def test_generates_anchor_links(self):
+        md = "## My Section\n"
+        gen = TocGenerator(max_depth=3)
+
+        toc = gen.generate(md)
+
+        assert 'href="#my-section"' in toc
+
+    def test_anchor_handles_special_characters(self):
+        md = "## Hello, World! (Test)\n"
+        gen = TocGenerator(max_depth=3)
+
+        toc = gen.generate(md)
+
+        assert 'href="#hello-world-test"' in toc
+
+    def test_default_max_depth_is_three(self):
+        gen = TocGenerator()
+
+        assert gen.max_depth == 3
+
+
+class TestMarkdownContentToc:
+    def test_toc_field_defaults_to_empty_string(self):
+        content = MarkdownContent(filename="test.md", html="<p>Hi</p>")
+
+        assert content.toc == ""
+
+    def test_from_raw_generates_toc_when_generator_provided(self):
+        raw = "---\ntitle: Post\n---\n\n## Intro\n\n## Body\n"
+        gen = TocGenerator(max_depth=3)
+
+        content = MarkdownContent.from_raw("post.md", raw, toc_generator=gen)
+
+        assert "Intro" in content.toc
+        assert "Body" in content.toc
+
+    def test_from_raw_no_toc_without_generator(self):
+        raw = "## Heading\n\nParagraph\n"
+
+        content = MarkdownContent.from_raw("post.md", raw)
+
+        assert content.toc == ""
+
+
+class TestMarkdownParserToc:
+    @patch(f"{TEST_PATH}.open", mock_open(read_data="## Hello\n\nWorld"))
+    @patch(f"{TEST_PATH}.os")
+    def test_parser_passes_toc_generator(self, mock_os):
+        mock_os.listdir.return_value = ["post.md"]
+        mock_os.path.join.return_value = "/fake/content/post.md"
+        gen = TocGenerator(max_depth=3)
+        parser = MarkdownParser(content_dir=Path("/fake/content"), toc_generator=gen)
+
+        result = parser.parse()
+
+        assert "Hello" in result["post.md"].toc
+
+    @patch(f"{TEST_PATH}.open", mock_open(read_data="## Hello\n\nWorld"))
+    @patch(f"{TEST_PATH}.os")
+    def test_parser_no_toc_by_default(self, mock_os):
+        mock_os.listdir.return_value = ["post.md"]
+        mock_os.path.join.return_value = "/fake/content/post.md"
+        parser = MarkdownParser(content_dir=Path("/fake/content"))
+
+        result = parser.parse()
+
+        assert result["post.md"].toc == ""
