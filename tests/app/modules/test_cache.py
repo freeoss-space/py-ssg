@@ -181,3 +181,42 @@ class TestLoad:
 
         mock_create.assert_called_once_with(cache_dir=Path("/project"))
         assert cache._entries == {}
+
+
+class TestEnabled:
+    def test_needs_rebuild_always_true_when_disabled(self):
+        cache = BuildCache(cache_dir=Path("/project"), enabled=False)
+        cache._entries["index.html"] = cache.compute_hash("<h1>Hello</h1>")
+
+        assert cache.needs_rebuild("index.html", "<h1>Hello</h1>") is True
+
+    def test_update_is_noop_when_disabled(self):
+        cache = BuildCache(cache_dir=Path("/project"), enabled=False)
+
+        cache.update("index.html", "<h1>Hello</h1>")
+
+        assert cache._entries == {}
+
+    def test_save_is_noop_when_disabled(self):
+        cache = BuildCache(cache_dir=Path("/project"), enabled=False)
+
+        m = mock_open()
+        with patch(f"{TEST_PATH}.open", m):
+            cache.save()
+
+        m.assert_not_called()
+
+    def test_load_is_noop_when_disabled(self):
+        cache = BuildCache(cache_dir=Path("/project"), enabled=False)
+
+        m = mock_open()
+        with patch(f"{TEST_PATH}.open", m):
+            cache.load()
+
+        m.assert_not_called()
+        assert cache._entries == {}
+
+    def test_enabled_by_default(self):
+        cache = BuildCache(cache_dir=Path("/project"))
+
+        assert cache.enabled is True

@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,7 +39,12 @@ class MarkdownContent:
     custom_fields: SimpleNamespace = field(default_factory=SimpleNamespace)
 
     @classmethod
-    def from_raw(cls, filename: str, raw: str) -> MarkdownContent:
+    def from_raw(
+        cls,
+        filename: str,
+        raw: str,
+        render_markdown: Callable[[str], str] | None = None,
+    ) -> MarkdownContent:
         post = frontmatter.loads(raw)
         known_fields = {f.name for f in fields(cls)} - {
             "filename",
@@ -52,9 +58,10 @@ class MarkdownContent:
                 setattr(custom, key, post.metadata[key])
         raw_tags = post.get("tags")
         tags = [str(t) for t in raw_tags] if isinstance(raw_tags, list) else []
+        render = render_markdown or mistune.html
         return cls(
             filename=filename,
-            html=str(mistune.html(post.content)),
+            html=str(render(post.content)),
             title=str(post.get("title", "")),
             timestamp=str(post.get("timestamp", "")),
             tags=tags,
@@ -84,8 +91,13 @@ class MarkdownCollection:
 
 
 class MarkdownParser:
-    def __init__(self, content_dir: Path):
+    def __init__(
+        self,
+        content_dir: Path,
+        render_markdown: Callable[[str], str] | None = None,
+    ):
         self.content_dir = content_dir
+        self.render_markdown = render_markdown
 
     def parse(self) -> MarkdownCollection:
         collection = MarkdownCollection()
@@ -95,5 +107,9 @@ class MarkdownParser:
             filepath = os.path.join(self.content_dir, filename)
             with open(filepath) as f:
                 raw = f.read()
-            collection.add(MarkdownContent.from_raw(filename, raw))
+            collection.add(
+                MarkdownContent.from_raw(
+                    filename, raw, render_markdown=self.render_markdown
+                )
+            )
         return collection

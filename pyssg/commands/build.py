@@ -1,13 +1,14 @@
 import os
 import time
-import tomllib
 from pathlib import Path
 
 from pyssg.commands.base_command import BaseCommand
 from pyssg.modules.cache import BuildCache
+from pyssg.modules.config import SiteConfig
 from pyssg.modules.html import HtmlTemplateEngine
 from pyssg.modules.markdown import MarkdownParser
-from pyssg.modules.rss import FeedConfig, RssFeedGenerator
+from pyssg.modules.rss import RssFeedGenerator
+from pyssg.modules.syntax import SyntaxHighlighter
 
 
 class BuildCommand(BaseCommand):
@@ -19,12 +20,26 @@ class BuildCommand(BaseCommand):
         components_dir = project_dir / "components"
         output_dir = project_dir / "output"
 
-        cache = BuildCache(cache_dir=project_dir)
+        config = SiteConfig.load(project_dir)
+
+        cache = BuildCache(cache_dir=project_dir, enabled=config.cache)
         cache.load()
+
+        highlighter = None
+        render_markdown = None
+        if config.syntax.enabled:
+            highlighter = SyntaxHighlighter(
+                theme_light=config.syntax.theme_light,
+                theme_dark=config.syntax.theme_dark,
+            )
+            render_markdown = highlighter.render_markdown
 
         self._info("Parsing markdown files...")
         parsing_start = time.perf_counter()
-        parser = MarkdownParser(content_dir=project_dir / "content")
+        parser = MarkdownParser(
+            content_dir=project_dir / "content",
+            render_markdown=render_markdown,
+        )
         collection = parser.parse()
         parsing_time = time.perf_counter() - parsing_start
 
@@ -39,6 +54,7 @@ class BuildCommand(BaseCommand):
             templates_dir=templates_dir,
             components_dir=components_dir,
             component_names=component_names,
+            config=config,
         )
         os.makedirs(output_dir, exist_ok=True)
 
@@ -71,27 +87,22 @@ class BuildCommand(BaseCommand):
 
             built_files += 1
 
+        if highlighter:
+            css_path = os.path.join(output_dir, "syntax.css")
+            with open(css_path, "w") as f:
+                f.write(highlighter.get_stylesheet())
+
         rendering_time = time.perf_counter() - rendering_start
 
         feed_count = 0
-        config_path = os.path.join(project_dir, "py-ssg.toml")
-        if os.path.exists(config_path):
-            with open(config_path, "rb") as f:
-                config = tomllib.load(f)
-            site_config = config.get("py-ssg", {})
-            raw_feeds = site_config.get("feeds", [])
-            if raw_feeds:
-                self._info("Generating RSS feeds...")
-                feeds = [FeedConfig.from_dict(fd) for fd in raw_feeds]
-                generator = RssFeedGenerator(
-                    site_url=site_config.get("url", ""),
-                    feeds=feeds,
-                )
-                for output_name, xml in generator.generate(collection):
-                    output_path = os.path.join(output_dir, output_name)
-                    with open(output_path, "w") as f:
-                        f.write(xml)
-                    feed_count += 1
+        if config.feeds:
+            self._info("Generating RSS feeds...")
+            generator = RssFeedGenerator(config=config)
+            for output_name, xml in generator.generate(collection):
+                output_path = os.path.join(output_dir, output_name)
+                with open(output_path, "w") as f:
+                    f.write(xml)
+                feed_count += 1
 
         cache.save()
 

@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from pyssg.commands.init import InitCommand
+from pyssg.modules.config import CONFIG_FILENAME
 
 TEST_PATH = "pyssg.commands.init"
 
@@ -46,20 +47,20 @@ class TestInitStructure:
     ):
         command = InitCommand(folder_name=".")
         mock_os.path.isfile.return_value = False
-        traversable = mock_files("pyssg") / "templates" / "py-ssg.toml"
+        traversable = mock_files("pyssg") / "templates" / CONFIG_FILENAME
         expected_src = mock_path(str(traversable))
 
         with patch.object(command, "_success") as mock_success:
             command._init_structure(folder=tmp_path)
 
-        mock_os.path.isfile.assert_called_once_with(tmp_path / "py-ssg.toml")
+        mock_os.path.isfile.assert_called_once_with(tmp_path / CONFIG_FILENAME)
         mock_os.mkdir.assert_any_call(tmp_path / "content")
         mock_os.mkdir.assert_any_call(tmp_path / "templates")
         mock_os.mkdir.assert_any_call(tmp_path / "components")
         mock_os.mkdir.assert_any_call(tmp_path / "output")
         assert mock_os.mkdir.call_count == 4
         mock_shutil.copy2.assert_called_once_with(
-            expected_src, tmp_path / "py-ssg.toml"
+            expected_src, tmp_path / CONFIG_FILENAME
         )
         mock_success.assert_called_once_with(f"Initialized structure in: {tmp_path}")
 

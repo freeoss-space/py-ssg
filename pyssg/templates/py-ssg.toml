@@ -2,6 +2,12 @@
 name = "Blog Name"
 url = "https://yourblog.dev"
 description = "My blog"
+cache = true
+
+[py-ssg.syntax]
+enabled = true
+theme_light = "friendly"
+theme_dark = "monokai"
 
 [[py-ssg.authors]]
 name = "Your Name"

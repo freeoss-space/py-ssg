@@ -1,5 +1,6 @@
+from pyssg.modules.config import FeedConfig, SiteConfig
 from pyssg.modules.markdown import ContentAuthor, MarkdownCollection, MarkdownContent
-from pyssg.modules.rss import FeedConfig, RssFeedGenerator
+from pyssg.modules.rss import RssFeedGenerator
 
 
 def _make_content(
@@ -28,30 +29,15 @@ def _make_collection(*items):
     return col
 
 
-class TestFeedConfig:
-    def test_from_dict_minimal(self):
-        cfg = FeedConfig.from_dict({"title": "My Feed", "output": "feed.xml"})
-        assert cfg.title == "My Feed"
-        assert cfg.output == "feed.xml"
-        assert cfg.tags is None
-
-    def test_from_dict_with_tags(self):
-        cfg = FeedConfig.from_dict(
-            {"title": "Tech", "output": "tech.xml", "tags": ["tech", "code"]}
-        )
-        assert cfg.tags == ["tech", "code"]
-
-    def test_from_dict_defaults(self):
-        cfg = FeedConfig.from_dict({})
-        assert cfg.title == ""
-        assert cfg.output == "feed.xml"
-        assert cfg.description == ""
+def _make_config(url="https://example.com", feeds=None):
+    return SiteConfig(url=url, feeds=feeds or [])
 
 
 class TestRssFeedGenerator:
     def test_generate_single_feed(self):
         feed = FeedConfig(title="Blog", output="feed.xml", description="A blog")
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=[feed])
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(_make_content())
 
         results = gen.generate(col)
@@ -69,7 +55,8 @@ class TestRssFeedGenerator:
             FeedConfig(title="All", output="all.xml"),
             FeedConfig(title="Tech", output="tech.xml", tags=["tech"]),
         ]
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=feeds)
+        config = _make_config(feeds=feeds)
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(
             _make_content(filename="a.md", tags=["tech"]),
             _make_content(filename="b.md", tags=["life"]),
@@ -87,7 +74,8 @@ class TestRssFeedGenerator:
 
     def test_tag_filtering(self):
         feed = FeedConfig(title="Tech", output="tech.xml", tags=["tech"])
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=[feed])
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(
             _make_content(filename="a.md", tags=["tech", "code"]),
             _make_content(filename="b.md", tags=["life"]),
@@ -103,7 +91,8 @@ class TestRssFeedGenerator:
 
     def test_items_sorted_by_timestamp_descending(self):
         feed = FeedConfig(title="Blog", output="feed.xml")
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=[feed])
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(
             _make_content(filename="old.md", timestamp="2024-01-01T00:00:00"),
             _make_content(filename="new.md", timestamp="2025-06-01T00:00:00"),
@@ -120,7 +109,8 @@ class TestRssFeedGenerator:
 
     def test_author_with_email(self):
         feed = FeedConfig(title="Blog", output="feed.xml")
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=[feed])
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(
             _make_content(author_name="Alice", author_email="alice@example.com")
         )
@@ -131,7 +121,8 @@ class TestRssFeedGenerator:
 
     def test_author_without_email(self):
         feed = FeedConfig(title="Blog", output="feed.xml")
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=[feed])
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(_make_content(author_name="Alice"))
 
         results = gen.generate(col)
@@ -140,7 +131,8 @@ class TestRssFeedGenerator:
 
     def test_pubdate_included(self):
         feed = FeedConfig(title="Blog", output="feed.xml")
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=[feed])
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(_make_content(timestamp="2025-01-15T12:00:00"))
 
         results = gen.generate(col)
@@ -149,7 +141,8 @@ class TestRssFeedGenerator:
 
     def test_empty_collection(self):
         feed = FeedConfig(title="Blog", output="feed.xml", description="Empty")
-        gen = RssFeedGenerator(site_url="https://example.com", feeds=[feed])
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection()
 
         results = gen.generate(col)
@@ -159,7 +152,8 @@ class TestRssFeedGenerator:
 
     def test_trailing_slash_stripped_from_url(self):
         feed = FeedConfig(title="Blog", output="feed.xml")
-        gen = RssFeedGenerator(site_url="https://example.com/", feeds=[feed])
+        config = _make_config(url="https://example.com/", feeds=[feed])
+        gen = RssFeedGenerator(config=config)
         col = _make_collection(_make_content())
 
         results = gen.generate(col)

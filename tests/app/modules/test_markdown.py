@@ -142,6 +142,35 @@ class TestMarkdownCollection:
         assert list(collection) == [content_a, content_b]
 
 
+class TestCustomRenderer:
+    def test_from_raw_uses_custom_render_markdown(self):
+        custom_render = lambda text: f"<custom>{text}</custom>"
+        content = MarkdownContent.from_raw(
+            "test.md", "Hello", render_markdown=custom_render
+        )
+
+        assert content.html == "<custom>Hello</custom>"
+
+    def test_from_raw_defaults_to_mistune_html(self):
+        content = MarkdownContent.from_raw("test.md", "**bold**")
+
+        assert "<strong>bold</strong>" in content.html
+
+    @patch(f"{TEST_PATH}.open", mock_open(read_data="# Hello"))
+    @patch(f"{TEST_PATH}.os")
+    def test_parser_passes_render_markdown_to_from_raw(self, mock_os):
+        custom_render = lambda text: "<custom>rendered</custom>"
+        mock_os.listdir.return_value = ["post.md"]
+        mock_os.path.join.return_value = "/fake/content/post.md"
+        parser = MarkdownParser(
+            content_dir=Path("/fake/content"), render_markdown=custom_render
+        )
+
+        result = parser.parse()
+
+        assert result["post.md"].html == "<custom>rendered</custom>"
+
+
 class TestParse:
     @patch(f"{TEST_PATH}.os")
     def test_returns_empty_collection_when_no_markdown_files(self, mock_os):

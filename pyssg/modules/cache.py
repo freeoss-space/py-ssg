@@ -10,8 +10,9 @@ DYNAMIC_NODE_TYPES = (nodes.For, nodes.If, nodes.Macro, nodes.CallBlock)
 
 
 class BuildCache:
-    def __init__(self, cache_dir: Path):
+    def __init__(self, cache_dir: Path, enabled: bool = True):
         self.cache_dir = cache_dir
+        self.enabled = enabled
         self._entries: dict[str, str] = {}
 
     def has_dynamic_constructs(self, template: str) -> bool:
@@ -30,10 +31,14 @@ class BuildCache:
         return hashlib.sha256(content.encode()).hexdigest()
 
     def needs_rebuild(self, filename: str, content: str) -> bool:
+        if not self.enabled:
+            return True
         current_hash = self.compute_hash(content)
         return self._entries.get(filename) != current_hash
 
     def update(self, filename: str, content: str) -> None:
+        if not self.enabled:
+            return
         self._entries[filename] = self.compute_hash(content)
 
     @staticmethod
@@ -43,11 +48,15 @@ class BuildCache:
             f.write(json.dumps({}))
 
     def save(self) -> None:
+        if not self.enabled:
+            return
         cache_path = self.cache_dir / ".pyssg_cache.json"
         with open(cache_path, "w") as f:
             f.write(json.dumps(self._entries))
 
     def load(self) -> None:
+        if not self.enabled:
+            return
         cache_path = self.cache_dir / ".pyssg_cache.json"
         if not cache_path.exists():
             self.create(cache_dir=self.cache_dir)

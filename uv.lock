@@ -208,6 +208,7 @@ source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
     { name = "mistune" },
+    { name = "pygments" },
     { name = "python-frontmatter" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -226,6 +227,7 @@ dev = [
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "mistune", specifier = ">=3.2.0" },
+    { name = "pygments", specifier = ">=2.19.2" },
     { name = "python-frontmatter", specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.3.3" },
