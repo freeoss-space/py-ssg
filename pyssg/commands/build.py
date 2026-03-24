@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from pyssg.commands.base_command import BaseCommand
+from pyssg.modules.build_script import BuildContext, BuildScript
 from pyssg.modules.cache import BuildCache
 from pyssg.modules.config import SiteConfig
 from pyssg.modules.html import HtmlTemplateEngine
@@ -25,6 +26,18 @@ class BuildCommand(BaseCommand):
         cache = BuildCache(cache_dir=project_dir, enabled=config.cache)
         cache.load()
 
+        build_script = BuildScript(project_dir)
+        context = BuildContext(
+            config=config,
+            cache=cache,
+            project_dir=project_dir,
+            templates_dir=templates_dir,
+            components_dir=components_dir,
+            output_dir=output_dir,
+        )
+
+        build_script.before_build(context)
+
         highlighter = None
         render_markdown = None
         if config.syntax.enabled:
@@ -38,6 +51,8 @@ class BuildCommand(BaseCommand):
         if config.toc.enabled:
             toc_generator = TocGenerator(max_depth=config.toc.max_depth)
 
+        build_script.before_markdown_parsing(context)
+
         self._info("Parsing markdown files...")
         parsing_start = time.perf_counter()
         parser = MarkdownParser(
@@ -47,6 +62,10 @@ class BuildCommand(BaseCommand):
         )
         collection = parser.parse()
         parsing_time = time.perf_counter() - parsing_start
+
+        context.content = collection
+
+        build_script.before_component_parsing(context)
 
         self._info("Rendering templates...")
         rendering_start = time.perf_counter()
@@ -110,6 +129,8 @@ class BuildCommand(BaseCommand):
                 feed_count += 1
 
         cache.save()
+
+        build_script.after_build(context)
 
         total_time = time.perf_counter() - start_time
 
