@@ -1,37 +1,17 @@
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import format_datetime
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+from pyssg.modules.config import SiteConfig
 from pyssg.modules.markdown import MarkdownCollection
 
 
-@dataclass
-class FeedConfig:
-    title: str
-    output: str
-    description: str = ""
-    tags: list[str] | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict) -> FeedConfig:
-        tags = data.get("tags")
-        if isinstance(tags, list):
-            tags = [str(t) for t in tags]
-        return cls(
-            title=str(data.get("title", "")),
-            output=str(data.get("output", "feed.xml")),
-            description=str(data.get("description", "")),
-            tags=tags,
-        )
-
-
 class RssFeedGenerator:
-    def __init__(self, site_url: str, feeds: list[FeedConfig]):
-        self.site_url = site_url.rstrip("/")
-        self.feeds = feeds
+    def __init__(self, config: SiteConfig):
+        self.site_url = config.url.rstrip("/")
+        self.feeds = config.feeds
 
-    def _filter_items(self, collection: MarkdownCollection, feed: FeedConfig) -> list:
+    def _filter_items(self, collection: MarkdownCollection, feed) -> list:
         items = list(collection)
         if feed.tags:
             tag_set = set(feed.tags)
@@ -39,7 +19,7 @@ class RssFeedGenerator:
         items.sort(key=lambda x: x.timestamp, reverse=True)
         return items
 
-    def _build_feed(self, feed: FeedConfig, collection: MarkdownCollection) -> str:
+    def _build_feed(self, feed, collection: MarkdownCollection) -> str:
         rss = Element("rss", version="2.0")
         channel = SubElement(rss, "channel")
         SubElement(channel, "title").text = feed.title

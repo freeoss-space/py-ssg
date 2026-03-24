@@ -5,6 +5,8 @@ from xml.etree.ElementTree import fromstring
 
 from jinja2 import BaseLoader, Environment
 
+from pyssg.modules.config import SiteConfig
+
 _jinja_env = Environment(loader=BaseLoader(), autoescape=False)
 
 
@@ -14,19 +16,26 @@ class HtmlTemplateEngine:
         templates_dir: Path,
         components_dir: Path | None = None,
         component_names: list[str] | None = None,
+        config: SiteConfig | None = None,
     ):
         self.templates_dir = templates_dir
         self.components_dir = components_dir
         self.component_names = component_names or []
+        self.config = config
 
     def render(
         self,
         template: str,
         context: dict[str, Any] | None = None,
     ) -> str:
+        render_context: dict[str, Any] = {}
+        if self.config:
+            render_context["site"] = self.config
         if context:
+            render_context.update(context)
+        if render_context:
             jinja_template = _jinja_env.from_string(template)
-            result = jinja_template.render(**context)
+            result = jinja_template.render(**render_context)
         else:
             result = template
         result = self._render_components(result)

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pyssg.commands.base_command import BaseCommand
 from pyssg.modules.cache import BuildCache
+from pyssg.modules.config import CONFIG_FILENAME
 
 CURRENT_FOLDER_NAME = "."
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class InitCommand(BaseCommand):
         return False
 
     def _init_structure(self, folder: Path) -> None:
-        if os.path.isfile(folder / "py-ssg.toml"):
+        if os.path.isfile(folder / CONFIG_FILENAME):
             self._error("Configuration files already exist!")
             return
 
@@ -35,8 +36,8 @@ class InitCommand(BaseCommand):
         os.mkdir(folder / "output")
 
         shutil.copy2(
-            Path(str(files("pyssg") / "templates" / "py-ssg.toml")),
-            folder / "py-ssg.toml",
+            Path(str(files("pyssg") / "templates" / CONFIG_FILENAME)),
+            folder / CONFIG_FILENAME,
         )
         BuildCache.create(cache_dir=folder)
         self._success(f"Initialized structure in: {folder}")

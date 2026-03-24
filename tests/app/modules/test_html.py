@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
+from pyssg.modules.config import AuthorConfig, SiteConfig
 from pyssg.modules.html import HtmlTemplateEngine
 from pyssg.modules.markdown import MarkdownContent
 
@@ -118,11 +119,12 @@ class TestRenderComponent:
 
 
 class TestRenderTemplate:
-    def _make_engine(self):
+    def _make_engine(self, config=None):
         return HtmlTemplateEngine(
             templates_dir=Path("/templates"),
             components_dir=Path("/components"),
             component_names=[],
+            config=config,
         )
 
     def test_renders_jinja2_variable(self):
@@ -186,3 +188,97 @@ class TestRenderTemplate:
 
         assert "<header>Site Header</header>" in result
         assert "<p>My Post</p>" in result
+
+
+class TestSiteConfigInTemplates:
+    def test_site_name_available_in_template(self):
+        config = SiteConfig(name="My Blog")
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=[],
+            config=config,
+        )
+        template = "<title>{{ site.name }}</title>"
+
+        result = engine.render(template)
+
+        assert "<title>My Blog</title>" in result
+
+    def test_site_url_available_in_template(self):
+        config = SiteConfig(url="https://example.com")
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=[],
+            config=config,
+        )
+        template = '<link rel="canonical" href="{{ site.url }}" />'
+
+        result = engine.render(template)
+
+        assert 'href="https://example.com"' in result
+
+    def test_site_description_available_in_template(self):
+        config = SiteConfig(description="A great blog")
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=[],
+            config=config,
+        )
+        template = '<meta name="description" content="{{ site.description }}" />'
+
+        result = engine.render(template)
+
+        assert 'content="A great blog"' in result
+
+    def test_site_authors_available_in_template(self):
+        config = SiteConfig(
+            authors=[
+                AuthorConfig(name="Alice", email="alice@example.com"),
+                AuthorConfig(name="Bob", email="bob@example.com"),
+            ]
+        )
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=[],
+            config=config,
+        )
+        template = (
+            "{% for author in site.authors %}<span>{{ author.name }}</span>{% endfor %}"
+        )
+
+        result = engine.render(template)
+
+        assert "<span>Alice</span>" in result
+        assert "<span>Bob</span>" in result
+
+    def test_site_config_and_content_available_together(self):
+        config = SiteConfig(name="My Blog")
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=[],
+            config=config,
+        )
+        template = "<h1>{{ site.name }}</h1>{% for post in content %}<p>{{ post.title }}</p>{% endfor %}"
+        posts = [MarkdownContent(filename="", html="<p>a</p>", title="Post One")]
+
+        result = engine.render(template, context={"content": posts})
+
+        assert "<h1>My Blog</h1>" in result
+        assert "<p>Post One</p>" in result
+
+    def test_no_config_renders_without_site_variable(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=[],
+        )
+        template = "<p>Static content</p>"
+
+        result = engine.render(template)
+
+        assert "<p>Static content</p>" in result

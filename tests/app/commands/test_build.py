@@ -1,11 +1,21 @@
 from unittest.mock import MagicMock, mock_open, patch
 
 from pyssg.commands.build import BuildCommand
+from pyssg.modules.config import SiteConfig
 from pyssg.modules.markdown import MarkdownCollection, MarkdownContent
 
 TEST_POST = MarkdownContent(filename="post.md", html="<p>Hi</p>", title="Post")
 
 TEST_PATH = "pyssg.commands.build"
+
+
+def _default_config(**overrides):
+    return SiteConfig(
+        name=overrides.get("name", ""),
+        url=overrides.get("url", ""),
+        description=overrides.get("description", ""),
+        cache=overrides.get("cache", True),
+    )
 
 
 def _setup_path_and_os(mock_path, mock_os, template_files=None, component_files=None):
@@ -35,16 +45,24 @@ def _setup_cache(mock_cache_cls):
 
 
 class TestExecute:
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.os")
     @patch(f"{TEST_PATH}.HtmlTemplateEngine")
     @patch(f"{TEST_PATH}.MarkdownParser")
     @patch(f"{TEST_PATH}.Path")
     def test_parses_markdown_from_content_dir(
-        self, mock_path, mock_parser_cls, mock_engine_cls, mock_os, mock_cache_cls
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os)
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         command = BuildCommand()
 
@@ -54,16 +72,24 @@ class TestExecute:
         mock_parser_cls.assert_called_once_with(content_dir="/project/content")
         mock_parser_cls.return_value.parse.assert_called_once()
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.os")
     @patch(f"{TEST_PATH}.HtmlTemplateEngine")
     @patch(f"{TEST_PATH}.MarkdownParser")
     @patch(f"{TEST_PATH}.Path")
     def test_outputs_info_message(
-        self, mock_path, mock_parser_cls, mock_engine_cls, mock_os, mock_cache_cls
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os)
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         command = BuildCommand()
 
@@ -75,18 +101,27 @@ class TestExecute:
 
         mock_info.assert_any_call("Parsing markdown files...")
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.os")
     @patch(f"{TEST_PATH}.HtmlTemplateEngine")
     @patch(f"{TEST_PATH}.MarkdownParser")
     @patch(f"{TEST_PATH}.Path")
     def test_creates_template_engine_with_components(
-        self, mock_path, mock_parser_cls, mock_engine_cls, mock_os, mock_cache_cls
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(
             mock_path, mock_os, component_files=["Navbar.html", "Footer.html"]
         )
         _setup_cache(mock_cache_cls)
+        config = _default_config()
+        mock_config_cls.load.return_value = config
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         command = BuildCommand()
 
@@ -97,15 +132,23 @@ class TestExecute:
             templates_dir="/project/templates",
             components_dir="/project/components",
             component_names=["Navbar", "Footer"],
+            config=config,
         )
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.os")
     @patch(f"{TEST_PATH}.HtmlTemplateEngine")
     @patch(f"{TEST_PATH}.MarkdownParser")
     @patch(f"{TEST_PATH}.Path")
     def test_discovers_only_html_components(
-        self, mock_path, mock_parser_cls, mock_engine_cls, mock_os, mock_cache_cls
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(
             mock_path,
@@ -113,6 +156,7 @@ class TestExecute:
             component_files=["Navbar.html", "README.md", "styles.css"],
         )
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         command = BuildCommand()
 
@@ -122,6 +166,7 @@ class TestExecute:
         call_kwargs = mock_engine_cls.call_args[1]
         assert call_kwargs["component_names"] == ["Navbar"]
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -136,11 +181,13 @@ class TestExecute:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(
             mock_path, mock_os, template_files=["index.html", "about.html", "style.css"]
         )
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         collection = MarkdownCollection()
         collection.add(
             MarkdownContent(filename="post.md", html="<p>Hi</p>", title="Post")
@@ -154,6 +201,7 @@ class TestExecute:
 
         assert mock_engine_cls.return_value.render.call_count == 2
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -168,9 +216,11 @@ class TestExecute:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         collection = MarkdownCollection()
         collection.add(TEST_POST)
         mock_parser_cls.return_value.parse.return_value = collection
@@ -184,6 +234,7 @@ class TestExecute:
             "<h1>Template</h1>", context={"content": [TEST_POST]}
         )
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open")
     @patch(f"{TEST_PATH}.os")
@@ -198,9 +249,11 @@ class TestExecute:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_os.makedirs = MagicMock()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
@@ -216,6 +269,7 @@ class TestExecute:
 
         write_handle.write.assert_called_once_with("<h1>Rendered</h1>")
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -230,9 +284,11 @@ class TestExecute:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
         command = BuildCommand()
@@ -243,6 +299,7 @@ class TestExecute:
         mock_os.makedirs.assert_called_once_with("/project/output", exist_ok=True)
 
     @patch(f"{TEST_PATH}.time")
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -257,10 +314,12 @@ class TestExecute:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
         mock_time,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_time.perf_counter.return_value = 0.0
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
@@ -274,8 +333,62 @@ class TestExecute:
 
         mock_success.assert_any_call("Build complete!")
 
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_loads_config_from_project_dir(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_config_cls.load.assert_called_once()
+
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_passes_cache_enabled_from_config(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os)
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(cache=False)
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        call_kwargs = mock_cache_cls.call_args[1]
+        assert call_kwargs["enabled"] is False
+
 
 class TestCache:
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -290,9 +403,11 @@ class TestCache:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         mock_cache = _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
         command = BuildCommand()
@@ -302,6 +417,7 @@ class TestCache:
 
         mock_cache.load.assert_called_once()
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -316,9 +432,11 @@ class TestCache:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         mock_cache = _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
         command = BuildCommand()
@@ -328,6 +446,7 @@ class TestCache:
 
         mock_cache.save.assert_called_once()
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -342,11 +461,13 @@ class TestCache:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         mock_cache = _setup_cache(mock_cache_cls)
         mock_cache.has_dynamic_constructs.return_value = False
         mock_cache.needs_rebuild.return_value = False
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         command = BuildCommand()
 
@@ -355,6 +476,7 @@ class TestCache:
 
         mock_engine_cls.return_value.render.assert_not_called()
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -369,11 +491,13 @@ class TestCache:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         mock_cache = _setup_cache(mock_cache_cls)
         mock_cache.has_dynamic_constructs.return_value = True
         mock_cache.needs_rebuild.return_value = False
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
         command = BuildCommand()
@@ -383,6 +507,7 @@ class TestCache:
 
         mock_engine_cls.return_value.render.assert_called_once()
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -397,11 +522,13 @@ class TestCache:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         mock_cache = _setup_cache(mock_cache_cls)
         mock_cache.has_dynamic_constructs.return_value = False
         mock_cache.needs_rebuild.return_value = True
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
         command = BuildCommand()
@@ -411,6 +538,7 @@ class TestCache:
 
         mock_cache.update.assert_called_once_with("index.html", "<h1>Static</h1>")
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -425,10 +553,12 @@ class TestCache:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         mock_cache = _setup_cache(mock_cache_cls)
         mock_cache.has_dynamic_constructs.return_value = True
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
         command = BuildCommand()
@@ -438,6 +568,7 @@ class TestCache:
 
         mock_cache.update.assert_not_called()
 
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -452,11 +583,13 @@ class TestCache:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         mock_cache = _setup_cache(mock_cache_cls)
         mock_cache.has_dynamic_constructs.return_value = False
         mock_cache.needs_rebuild.return_value = False
+        mock_config_cls.load.return_value = _default_config()
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         command = BuildCommand()
 
@@ -468,6 +601,7 @@ class TestCache:
 
 class TestSummary:
     @patch(f"{TEST_PATH}.time")
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -482,6 +616,7 @@ class TestSummary:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
         mock_time,
     ):
         _setup_path_and_os(
@@ -490,6 +625,7 @@ class TestSummary:
             template_files=["index.html", "about.html"],
         )
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_time.perf_counter.return_value = 0.0
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
@@ -504,6 +640,7 @@ class TestSummary:
         mock_success.assert_any_call("Total files: 2")
 
     @patch(f"{TEST_PATH}.time")
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -518,6 +655,7 @@ class TestSummary:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
         mock_time,
     ):
         _setup_path_and_os(
@@ -527,6 +665,7 @@ class TestSummary:
             component_files=["Navbar.html", "Footer.html"],
         )
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_time.perf_counter.return_value = 0.0
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
@@ -541,6 +680,7 @@ class TestSummary:
         mock_success.assert_any_call("Total components: 2")
 
     @patch(f"{TEST_PATH}.time")
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -555,6 +695,7 @@ class TestSummary:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
         mock_time,
     ):
         _setup_path_and_os(
@@ -565,6 +706,7 @@ class TestSummary:
         mock_cache = _setup_cache(mock_cache_cls)
         mock_cache.has_dynamic_constructs.return_value = False
         mock_cache.needs_rebuild.side_effect = [True, False, True]
+        mock_config_cls.load.return_value = _default_config()
         mock_time.perf_counter.return_value = 0.0
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
@@ -580,6 +722,7 @@ class TestSummary:
         mock_success.assert_any_call("Cached: 1")
 
     @patch(f"{TEST_PATH}.time")
+    @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.BuildCache")
     @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Static</h1>")
     @patch(f"{TEST_PATH}.os")
@@ -594,10 +737,12 @@ class TestSummary:
         mock_os,
         mock_file,
         mock_cache_cls,
+        mock_config_cls,
         mock_time,
     ):
         _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
         _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
         mock_time.perf_counter.side_effect = [0.0, 0.0, 0.05, 0.05, 0.15, 0.20]
         mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
         mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"

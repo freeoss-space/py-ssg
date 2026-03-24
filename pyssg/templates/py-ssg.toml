@@ -2,6 +2,7 @@
 name = "Blog Name"
 url = "https://yourblog.dev"
 description = "My blog"
+cache = true
 
 [[py-ssg.authors]]
 name = "Your Name"
