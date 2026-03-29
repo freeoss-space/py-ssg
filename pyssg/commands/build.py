@@ -1,4 +1,5 @@
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -97,6 +98,15 @@ class BuildCommand(BaseCommand):
         total_files = 0
         built_files = 0
         cached_files = 0
+
+        for entry in os.listdir(templates_dir):
+            entry_path = os.path.join(templates_dir, entry)
+            if os.path.isdir(entry_path):
+                dest = os.path.join(output_dir, entry)
+                if os.path.exists(dest):
+                    shutil.rmtree(dest)
+                shutil.copytree(entry_path, dest)
+                continue
 
         for filename in os.listdir(templates_dir):
             if not filename.endswith(".html"):

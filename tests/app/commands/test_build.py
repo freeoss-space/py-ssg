@@ -23,22 +23,34 @@ def _default_config(**overrides):
     )
 
 
-def _setup_path_and_os(mock_path, mock_os, template_files=None, component_files=None):
+def _setup_path_and_os(
+    mock_path, mock_os, template_files=None, component_files=None, template_dirs=None
+):
     """Common setup for path and os mocks."""
     mock_path.cwd.return_value.__truediv__ = lambda self, x: f"/project/{x}"
     template_files = template_files or []
     component_files = component_files or []
+    template_dirs = template_dirs or []
+
+    all_template_entries = template_dirs + template_files
 
     def listdir_side_effect(path):
         if str(path) == "/project/templates":
-            return template_files
+            return all_template_entries
         if str(path) == "/project/components":
             return component_files
         return []
 
+    def isdir_side_effect(path):
+        for d in template_dirs:
+            if str(path) == f"/project/templates/{d}":
+                return True
+        return False
+
     mock_os.listdir.side_effect = listdir_side_effect
     mock_os.path.join.side_effect = lambda d, f: f"{d}/{f}"
     mock_os.path.exists.return_value = False
+    mock_os.path.isdir.side_effect = isdir_side_effect
 
 
 def _setup_cache(mock_cache_cls):
@@ -322,6 +334,112 @@ class TestExecute:
             command.execute()
 
         mock_os.makedirs.assert_called_once_with("/project/output", exist_ok=True)
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_copies_template_subdirectories_to_output(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(
+            mock_path, mock_os, template_dirs=["assets"], template_files=["index.html"]
+        )
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_shutil.copytree.assert_called_once_with(
+            "/project/templates/assets", "/project/output/assets"
+        )
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_removes_existing_output_subdir_before_copying(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_dirs=["assets"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_os.path.exists.return_value = True
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_shutil.rmtree.assert_called_once_with("/project/output/assets")
+        mock_shutil.copytree.assert_called_once_with(
+            "/project/templates/assets", "/project/output/assets"
+        )
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_does_not_copy_html_files_as_directories(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_shutil.copytree.assert_not_called()
 
     @patch(f"{TEST_PATH}.BuildScript")
     @patch(f"{TEST_PATH}.time")
