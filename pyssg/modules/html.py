@@ -86,7 +86,9 @@ class _ComponentParser(HTMLParser):
         start = self._to_offset(line, col)
         end = start + len(raw)
         self._matches.append(
-            ComponentMatch(name=real_name, start=start, end=end, attrs=real_attrs, children="")
+            ComponentMatch(
+                name=real_name, start=start, end=end, attrs=real_attrs, children=""
+            )
         )
 
     def handle_endtag(self, tag: str) -> None:
@@ -95,7 +97,9 @@ class _ComponentParser(HTMLParser):
         # HTMLParser lowercases 'tag', so read the real name from the raw HTML.
         name_start = start + 2  # skip '</'
         name_end = name_start
-        while name_end < len(self._html) and self._html[name_end] not in _TAG_TERMINATORS:
+        while (
+            name_end < len(self._html) and self._html[name_end] not in _TAG_TERMINATORS
+        ):
             name_end += 1
         real_name = self._html[name_start:name_end]
         if real_name not in self._known_names:

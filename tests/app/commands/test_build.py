@@ -56,7 +56,9 @@ def _setup_path_and_os(
     mock_os.path.exists.return_value = False
     mock_os.path.isdir.side_effect = isdir_side_effect
 
-    walk_data = [("/project/components", list(component_subdirs.keys()), component_files)]
+    walk_data = [
+        ("/project/components", list(component_subdirs.keys()), component_files)
+    ]
     for subdir, files in component_subdirs.items():
         walk_data.append((f"/project/components/{subdir}", [], files))
     mock_os.walk.return_value = walk_data
