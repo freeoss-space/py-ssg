@@ -13,6 +13,24 @@ from pyssg.modules.rss import RssFeedGenerator
 from pyssg.modules.syntax import SyntaxHighlighter
 
 
+def _discover_components(components_dir: Path) -> list[str]:
+    names: list[str] = []
+    components_dir_str = str(components_dir)
+    for dirpath, _, filenames in os.walk(components_dir):
+        for filename in filenames:
+            if not filename.endswith(".html"):
+                continue
+            name = filename.removesuffix(".html")
+            dirpath_str = str(dirpath)
+            if dirpath_str == components_dir_str:
+                names.append(name)
+            else:
+                rel = dirpath_str[len(components_dir_str) :].lstrip("/\\")
+                parts = [p for p in rel.replace("\\", "/").split("/") if p]
+                names.append(".".join(parts + [name]))
+    return names
+
+
 class BuildCommand(BaseCommand):
     def execute(self) -> None:
         start_time = time.perf_counter()
@@ -82,11 +100,7 @@ class BuildCommand(BaseCommand):
 
         self._info("Rendering templates...")
         rendering_start = time.perf_counter()
-        component_names = [
-            f.removesuffix(".html")
-            for f in os.listdir(components_dir)
-            if f.endswith(".html")
-        ]
+        component_names = _discover_components(components_dir)
         engine = HtmlTemplateEngine(
             templates_dir=templates_dir,
             components_dir=components_dir,

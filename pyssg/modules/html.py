@@ -1,7 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from xml.etree.ElementTree import fromstring
+from xml.etree.ElementTree import ParseError, fromstring
 
 from jinja2 import BaseLoader, Environment, Template
 
@@ -18,51 +19,127 @@ class ComponentMatch:
     start: int
     end: int
     attrs: dict[str, str]
+    children: str = field(default="")
+
+
+def _build_line_offsets(html: str) -> list[int]:
+    offsets = [0]
+    for i, ch in enumerate(html):
+        if ch == "\n":
+            offsets.append(i + 1)
+    return offsets
+
+
+def _parse_raw_tag(raw: str) -> tuple[str, dict[str, str]]:
+    """Return (tag_name, attrs) from a raw opening-tag string, preserving case."""
+    xml_frag = raw if raw.endswith("/>") else raw[:-1] + " />"
+    try:
+        elem = fromstring(xml_frag)
+        return elem.tag, dict(elem.attrib)
+    except ParseError:
+        name_end = 1
+        while name_end < len(raw) and raw[name_end] not in _TAG_TERMINATORS:
+            name_end += 1
+        return raw[1:name_end], {}
+
+
+class _ComponentParser(HTMLParser):
+    """HTMLParser subclass that locates component tags while preserving case.
+
+    HTMLParser lowercases all tag/attr names, so we use getpos() to locate each
+    tag in the original HTML and re-parse it with fromstring() for case-correct
+    names and attributes.
+    """
+
+    def __init__(self, html: str, known_names: set[str]) -> None:
+        super().__init__(convert_charrefs=False)
+        self._known_names = known_names
+        self._html = html
+        self._line_offsets = _build_line_offsets(html)
+        self._matches: list[ComponentMatch] = []
+        # (name, tag_start, open_tag_end, attrs) — one entry per open component tag
+        self._stack: list[tuple[str, int, int, dict[str, str]]] = []
+
+    def _to_offset(self, line: int, col: int) -> int:
+        return self._line_offsets[line - 1] + col
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        raw = self.get_starttag_text()
+        if not raw:
+            return
+        real_name, real_attrs = _parse_raw_tag(raw)
+        if real_name not in self._known_names:
+            return
+        line, col = self.getpos()
+        start = self._to_offset(line, col)
+        open_end = start + len(raw)
+        self._stack.append((real_name, start, open_end, real_attrs))
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        raw = self.get_starttag_text()
+        if not raw:
+            return
+        real_name, real_attrs = _parse_raw_tag(raw)
+        if real_name not in self._known_names:
+            return
+        line, col = self.getpos()
+        start = self._to_offset(line, col)
+        end = start + len(raw)
+        self._matches.append(
+            ComponentMatch(name=real_name, start=start, end=end, attrs=real_attrs, children="")
+        )
+
+    def handle_endtag(self, tag: str) -> None:
+        line, col = self.getpos()
+        start = self._to_offset(line, col)
+        # HTMLParser lowercases 'tag', so read the real name from the raw HTML.
+        name_start = start + 2  # skip '</'
+        name_end = name_start
+        while name_end < len(self._html) and self._html[name_end] not in _TAG_TERMINATORS:
+            name_end += 1
+        real_name = self._html[name_start:name_end]
+        if real_name not in self._known_names:
+            return
+        close_end = self._html.find(">", start) + 1
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == real_name:
+                open_name, open_start, open_end, open_attrs = self._stack.pop(i)
+                self._matches.append(
+                    ComponentMatch(
+                        name=open_name,
+                        start=open_start,
+                        end=close_end,
+                        attrs=open_attrs,
+                        children=self._html[open_end:start],
+                    )
+                )
+                break
+
+    def get_matches(self) -> list[ComponentMatch]:
+        # Sort by start position, then drop nested matches so callers receive
+        # only the outermost components; inner ones are processed in later passes.
+        sorted_matches = sorted(self._matches, key=lambda m: m.start)
+        result: list[ComponentMatch] = []
+        last_end = 0
+        for match in sorted_matches:
+            if match.start >= last_end:
+                result.append(match)
+                last_end = match.end
+        return result
 
 
 def find_component_tags(html: str, known_names: set[str]) -> list[ComponentMatch]:
     if not known_names:
         return []
-
-    matches: list[ComponentMatch] = []
-    search_from = 0
-
-    while search_from < len(html):
-        open_bracket = html.find("<", search_from)
-        if open_bracket == -1:
-            break
-
-        tag_name_start = open_bracket + 1
-        tag_name_end = tag_name_start
-        while tag_name_end < len(html) and html[tag_name_end] not in _TAG_TERMINATORS:
-            tag_name_end += 1
-
-        tag_name = html[tag_name_start:tag_name_end]
-
-        if tag_name not in known_names:
-            search_from = open_bracket + 1
-            continue
-
-        close_marker = html.find("/>", tag_name_end)
-        if close_marker == -1:
-            search_from = open_bracket + 1
-            continue
-
-        tag_end = close_marker + 2
-        tag_text = html[open_bracket:tag_end]
-        attrs = dict(fromstring(tag_text).attrib)
-        matches.append(
-            ComponentMatch(name=tag_name, start=open_bracket, end=tag_end, attrs=attrs)
-        )
-        search_from = tag_end
-
-    return matches
+    parser = _ComponentParser(html, known_names)
+    parser.feed(html)
+    return parser.get_matches()
 
 
 def replace_component_tags(
     html: str,
     matches: list[ComponentMatch],
-    replacements: dict[str, str],
+    replacements: list[str],
 ) -> str:
     if not matches:
         return html
@@ -70,9 +147,9 @@ def replace_component_tags(
     parts: list[str] = []
     last_end = 0
 
-    for match in matches:
+    for match, replacement in zip(matches, replacements):
         parts.append(html[last_end : match.start])
-        parts.append(replacements[match.name])
+        parts.append(replacement)
         last_end = match.end
 
     parts.append(html[last_end:])
@@ -99,7 +176,8 @@ class HtmlTemplateEngine:
         if cached is not None:
             return cached
         assert self.components_dir is not None
-        filepath = self.components_dir / f"{name}.html"
+        parts = name.split(".")
+        filepath = (self.components_dir / Path(*parts)).with_suffix(".html")
         with open(filepath) as f:
             content = f.read()
         template = _jinja_env.from_string(content)
@@ -132,10 +210,12 @@ class HtmlTemplateEngine:
             matches = find_component_tags(result, self._component_set)
             if not matches:
                 break
-            replacements = {
-                match.name: self._get_component(match.name).render(**match.attrs)
+            replacements = [
+                self._get_component(match.name).render(
+                    **match.attrs, children=match.children
+                )
                 for match in matches
-            }
+            ]
             result = replace_component_tags(result, matches, replacements)
 
         return result

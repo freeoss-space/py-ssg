@@ -282,3 +282,150 @@ class TestSiteConfigInTemplates:
         result = engine.render(template)
 
         assert "<p>Static content</p>" in result
+
+
+class TestComponentChildren:
+    def test_component_receives_children_content(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["Card"],
+        )
+        template = "<Card><p>Hello</p></Card>"
+        card_html = "<div class='card'>{{ children }}</div>"
+
+        with patch(f"{TEST_PATH}.open", mock_open(read_data=card_html)):
+            result = engine.render(template)
+
+        assert "<p>Hello</p>" in result
+        assert "class='card'" in result
+
+    def test_component_children_empty_string_when_self_closing(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["Card"],
+        )
+        template = "<Card />"
+        card_html = "<div>{{ children }}</div>"
+
+        with patch(f"{TEST_PATH}.open", mock_open(read_data=card_html)):
+            result = engine.render(template)
+
+        assert "<div></div>" in result
+
+    def test_nested_components_with_children(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["Layout", "Card"],
+        )
+        template = "<Layout><Card /></Layout>"
+        layout_html = "<main>{{ children }}</main>"
+        card_html = "<div>Card Content</div>"
+
+        def side_effect(path, *args, **kwargs):
+            content = {
+                "/components/Layout.html": layout_html,
+                "/components/Card.html": card_html,
+            }
+            return mock_open(read_data=content[str(path)])()
+
+        with patch(f"{TEST_PATH}.open", side_effect=side_effect):
+            result = engine.render(template)
+
+        assert "<main>" in result
+        assert "<div>Card Content</div>" in result
+
+    def test_children_with_attributes_on_component(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["Box"],
+        )
+        template = '<Box class="highlight"><span>text</span></Box>'
+        box_html = '<section class="{{ class }}">{{ children }}</section>'
+
+        with patch(f"{TEST_PATH}.open", mock_open(read_data=box_html)):
+            result = engine.render(template)
+
+        assert 'class="highlight"' in result
+        assert "<span>text</span>" in result
+
+    def test_two_sibling_components_with_different_children(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["Box"],
+        )
+        template = "<Box><p>first</p></Box><Box><p>second</p></Box>"
+        box_html = "<div>{{ children }}</div>"
+
+        with patch(f"{TEST_PATH}.open", mock_open(read_data=box_html)):
+            result = engine.render(template)
+
+        assert "<p>first</p>" in result
+        assert "<p>second</p>" in result
+
+
+class TestDotSyntaxComponents:
+    def test_dot_syntax_resolves_to_subdirectory(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["UI.Card"],
+        )
+        template = "<UI.Card />"
+        card_html = "<div>Card</div>"
+
+        def side_effect(path, *args, **kwargs):
+            content = {
+                "/components/UI/Card.html": card_html,
+            }
+            return mock_open(read_data=content[str(path)])()
+
+        with patch(f"{TEST_PATH}.open", side_effect=side_effect):
+            result = engine.render(template)
+
+        assert "<div>Card</div>" in result
+
+    def test_dot_syntax_with_children(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["UI.Card"],
+        )
+        template = "<UI.Card><p>content</p></UI.Card>"
+        card_html = "<article>{{ children }}</article>"
+
+        def side_effect(path, *args, **kwargs):
+            content = {
+                "/components/UI/Card.html": card_html,
+            }
+            return mock_open(read_data=content[str(path)])()
+
+        with patch(f"{TEST_PATH}.open", side_effect=side_effect):
+            result = engine.render(template)
+
+        assert "<article>" in result
+        assert "<p>content</p>" in result
+
+    def test_deep_dot_syntax_resolves_nested_subdirectory(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["A.B.C"],
+        )
+        template = "<A.B.C />"
+        component_html = "<span>deep</span>"
+
+        def side_effect(path, *args, **kwargs):
+            content = {
+                "/components/A/B/C.html": component_html,
+            }
+            return mock_open(read_data=content[str(path)])()
+
+        with patch(f"{TEST_PATH}.open", side_effect=side_effect):
+            result = engine.render(template)
+
+        assert "<span>deep</span>" in result

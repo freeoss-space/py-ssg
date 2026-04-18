@@ -24,21 +24,25 @@ def _default_config(**overrides):
 
 
 def _setup_path_and_os(
-    mock_path, mock_os, template_files=None, component_files=None, template_dirs=None
+    mock_path,
+    mock_os,
+    template_files=None,
+    component_files=None,
+    template_dirs=None,
+    component_subdirs=None,
 ):
     """Common setup for path and os mocks."""
     mock_path.cwd.return_value.__truediv__ = lambda self, x: f"/project/{x}"
     template_files = template_files or []
     component_files = component_files or []
     template_dirs = template_dirs or []
+    component_subdirs = component_subdirs or {}
 
     all_template_entries = template_dirs + template_files
 
     def listdir_side_effect(path):
         if str(path) == "/project/templates":
             return all_template_entries
-        if str(path) == "/project/components":
-            return component_files
         return []
 
     def isdir_side_effect(path):
@@ -51,6 +55,11 @@ def _setup_path_and_os(
     mock_os.path.join.side_effect = lambda d, f: f"{d}/{f}"
     mock_os.path.exists.return_value = False
     mock_os.path.isdir.side_effect = isdir_side_effect
+
+    walk_data = [("/project/components", list(component_subdirs.keys()), component_files)]
+    for subdir, files in component_subdirs.items():
+        walk_data.append((f"/project/components/{subdir}", [], files))
+    mock_os.walk.return_value = walk_data
 
 
 def _setup_cache(mock_cache_cls):
@@ -505,6 +514,77 @@ class TestExecute:
             command.execute()
 
         mock_config_cls.load.assert_called_once()
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_discovers_subfolder_components_with_dot_syntax(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(
+            mock_path,
+            mock_os,
+            component_subdirs={"UI": ["Card.html", "Button.html"]},
+        )
+        _setup_cache(mock_cache_cls)
+        config = _default_config()
+        mock_config_cls.load.return_value = config
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        call_kwargs = mock_engine_cls.call_args[1]
+        assert "UI.Card" in call_kwargs["component_names"]
+        assert "UI.Button" in call_kwargs["component_names"]
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_discovers_mixed_flat_and_subfolder_components(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(
+            mock_path,
+            mock_os,
+            component_files=["Navbar.html"],
+            component_subdirs={"UI": ["Card.html"]},
+        )
+        _setup_cache(mock_cache_cls)
+        config = _default_config()
+        mock_config_cls.load.return_value = config
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        call_kwargs = mock_engine_cls.call_args[1]
+        assert "Navbar" in call_kwargs["component_names"]
+        assert "UI.Card" in call_kwargs["component_names"]
 
     @patch(f"{TEST_PATH}.BuildScript")
     @patch(f"{TEST_PATH}.SiteConfig")
