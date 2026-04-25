@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
+import pytest
+
 from pyssg.modules.config import (
     AuthorConfig,
     FeedConfig,
@@ -105,6 +107,8 @@ class TestSiteConfig:
         assert config.name == ""
         assert config.url == ""
         assert config.description == ""
+        assert config.static_dir == "static"
+        assert config.static_dir_output == "static"
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True
@@ -116,6 +120,8 @@ class TestSiteConfig:
             "name": "My Blog",
             "url": "https://example.com",
             "description": "A blog",
+            "static_dir": "public",
+            "static_dir_output": "root",
             "cache": False,
             "authors": [{"name": "Jane", "email": "jane@example.com"}],
             "feeds": [{"title": "Feed", "output": "feed.xml"}],
@@ -126,6 +132,8 @@ class TestSiteConfig:
         assert config.name == "My Blog"
         assert config.url == "https://example.com"
         assert config.description == "A blog"
+        assert config.static_dir == "public"
+        assert config.static_dir_output == "root"
         assert config.cache is False
         assert len(config.authors) == 1
         assert config.authors[0].name == "Jane"
@@ -139,11 +147,20 @@ class TestSiteConfig:
         assert config.name == ""
         assert config.url == ""
         assert config.description == ""
+        assert config.static_dir == "static"
+        assert config.static_dir_output == "static"
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True
         assert config.syntax == SyntaxConfig()
         assert config.server == ServerConfig()
+
+    def test_from_dict_raises_for_invalid_static_dir_output(self):
+        with pytest.raises(
+            ValueError,
+            match='Invalid static_dir_output value: "invalid". Supported modes: "static", "root".',
+        ):
+            SiteConfig.from_dict({"static_dir_output": "invalid"})
 
     def test_from_dict_syntax_section(self):
         config = SiteConfig.from_dict(
@@ -219,14 +236,16 @@ class TestSiteConfig:
 class TestSiteConfigLoad:
     def test_loads_from_toml_file(self):
         toml_content = b"""
-[py-ssg]
-name = "My Blog"
-url = "https://example.com"
-description = "A blog"
-cache = true
+        [py-ssg]
+        name = "My Blog"
+        url = "https://example.com"
+        description = "A blog"
+        static_dir = "public"
+        static_dir_output = "root"
+        cache = true
 
-[[py-ssg.authors]]
-name = "Jane"
+        [[py-ssg.authors]]
+        name = "Jane"
 email = "jane@example.com"
 
 [[py-ssg.feeds]]
@@ -247,6 +266,8 @@ theme_dark = "dracula"
         assert config.name == "My Blog"
         assert config.url == "https://example.com"
         assert config.description == "A blog"
+        assert config.static_dir == "public"
+        assert config.static_dir_output == "root"
         assert config.cache is True
         assert len(config.authors) == 1
         assert config.authors[0].name == "Jane"
@@ -275,6 +296,22 @@ cache = false
             config = SiteConfig.load(Path("/project"))
 
         assert config.cache is False
+
+    @patch(
+        f"{TEST_PATH}.open",
+        new_callable=mock_open,
+        read_data=b"""
+[py-ssg]
+static_dir_output = "invalid"
+""",
+    )
+    @patch(f"{TEST_PATH}.Path.exists", return_value=True)
+    def test_raises_for_invalid_static_dir_output(self, _mock_exists, _mock_file):
+        with pytest.raises(
+            ValueError,
+            match='Invalid static_dir_output value: "invalid". Supported modes: "static", "root".',
+        ):
+            SiteConfig.load(Path("/project"))
 
 
 class TestTocConfig:

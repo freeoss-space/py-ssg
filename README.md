@@ -107,9 +107,15 @@ my-blog/
 │   ├── Navbar.html
 │   ├── Footer.html
 │   └── Alert.html
+├── static/             # Optional static assets copied on build
+│   ├── favicon.ico
+│   └── styles.css
 ├── output/             # Generated site
 │   ├── index.html
 │   ├── about.html
+│   ├── static/
+│   │   ├── favicon.ico
+│   │   └── styles.css
 │   ├── syntax.css
 │   └── feed.xml
 ├── py-ssg.toml         # Configuration
@@ -127,6 +133,8 @@ name = "Blog Name"
 url = "https://yourblog.dev"
 description = "My blog"
 cache = true                    # Enable incremental build caching
+static_dir = "static"           # Source directory for copied assets
+static_dir_output = "static"    # "static" -> output/static, "root" -> output/
 
 [py-ssg.server]
 port = 8000                     # Dev server port
@@ -158,6 +166,18 @@ tags = ["tech"]
 ```
 
 All configuration is accessible in templates via the `{{ site }}` variable (e.g., `{{ site.name }}`, `{{ site.url }}`).
+
+## Static Assets
+
+If your project has a `static/` directory, py-ssg copies it on every build after template rendering.
+
+- `static_dir = "static"` copies `static/` to `output/static/`
+- `static_dir_output = "root"` merges the directory directly into `output/`. Because static assets are copied after rendering, files in `static/` with the same relative path as generated output files overwrite the generated files.
+- Set `static_dir` to another directory name, such as `public`, if you prefer a different source path
+
+With the default layout, reference assets from templates with paths like `/static/styles.css` or `/static/favicon.ico`.
+
+When using `static_dir_output = "root"`, avoid filename collisions with generated pages and assets such as `index.html`, `feed.xml`, and `syntax.css` unless you intentionally want the static file to take precedence.
 
 ## Markdown Content
 
@@ -408,7 +428,7 @@ def before_component_parsing(context):
 def after_build(context):
     """After the full build completes.
 
-    Good for post-processing, sitemaps, copying static assets.
+    Good for post-processing and sitemaps.
     """
     pass
 ```
