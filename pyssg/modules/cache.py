@@ -10,7 +10,7 @@ DYNAMIC_NODE_TYPES = (nodes.For, nodes.If, nodes.Macro, nodes.CallBlock)
 
 
 class BuildCache:
-    def __init__(self, cache_dir: Path, enabled: bool = True):
+    def __init__(self, cache_dir: Path, enabled: bool = True) -> None:
         self.cache_dir = cache_dir
         self.enabled = enabled
         self._entries: dict[str, str] = {}

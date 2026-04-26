@@ -109,6 +109,7 @@ class TestSiteConfig:
         assert config.description == ""
         assert config.static_dir == "static"
         assert config.static_dir_output == "static"
+        assert config.content_sort == "date_desc"
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True
@@ -122,6 +123,7 @@ class TestSiteConfig:
             "description": "A blog",
             "static_dir": "public",
             "static_dir_output": "root",
+            "content_sort": "filename",
             "cache": False,
             "authors": [{"name": "Jane", "email": "jane@example.com"}],
             "feeds": [{"title": "Feed", "output": "feed.xml"}],
@@ -134,6 +136,7 @@ class TestSiteConfig:
         assert config.description == "A blog"
         assert config.static_dir == "public"
         assert config.static_dir_output == "root"
+        assert config.content_sort == "filename"
         assert config.cache is False
         assert len(config.authors) == 1
         assert config.authors[0].name == "Jane"
@@ -149,6 +152,7 @@ class TestSiteConfig:
         assert config.description == ""
         assert config.static_dir == "static"
         assert config.static_dir_output == "static"
+        assert config.content_sort == "date_desc"
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True
@@ -161,6 +165,13 @@ class TestSiteConfig:
             match='Invalid static_dir_output value: "invalid". Supported modes: "static", "root".',
         ):
             SiteConfig.from_dict({"static_dir_output": "invalid"})
+
+    def test_from_dict_raises_for_invalid_content_sort(self):
+        with pytest.raises(
+            ValueError,
+            match='Invalid content_sort value: "invalid". Supported modes: "date_desc", "date_asc", "filename", "none".',
+        ):
+            SiteConfig.from_dict({"content_sort": "invalid"})
 
     def test_from_dict_syntax_section(self):
         config = SiteConfig.from_dict(
@@ -242,6 +253,7 @@ class TestSiteConfigLoad:
         description = "A blog"
         static_dir = "public"
         static_dir_output = "root"
+        content_sort = "filename"
         cache = true
 
         [[py-ssg.authors]]
@@ -268,6 +280,7 @@ theme_dark = "dracula"
         assert config.description == "A blog"
         assert config.static_dir == "public"
         assert config.static_dir_output == "root"
+        assert config.content_sort == "filename"
         assert config.cache is True
         assert len(config.authors) == 1
         assert config.authors[0].name == "Jane"
@@ -310,6 +323,22 @@ static_dir_output = "invalid"
         with pytest.raises(
             ValueError,
             match='Invalid static_dir_output value: "invalid". Supported modes: "static", "root".',
+        ):
+            SiteConfig.load(Path("/project"))
+
+    @patch(
+        f"{TEST_PATH}.open",
+        new_callable=mock_open,
+        read_data=b"""
+[py-ssg]
+content_sort = "invalid"
+""",
+    )
+    @patch(f"{TEST_PATH}.Path.exists", return_value=True)
+    def test_raises_for_invalid_content_sort(self, _mock_exists, _mock_file):
+        with pytest.raises(
+            ValueError,
+            match='Invalid content_sort value: "invalid". Supported modes: "date_desc", "date_asc", "filename", "none".',
         ):
             SiteConfig.load(Path("/project"))
 

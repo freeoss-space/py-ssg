@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
@@ -10,7 +10,7 @@ class _ChangeHandler(FileSystemEventHandler):
     def __init__(self, on_change: Callable[[], None]) -> None:
         self._on_change = on_change
 
-    def on_any_event(self, event) -> None:
+    def on_any_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
         self._on_change()

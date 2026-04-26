@@ -1,6 +1,6 @@
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -23,7 +23,7 @@ def _slugify(text: str) -> str:
 
 
 class TocGenerator:
-    def __init__(self, max_depth: int = 3):
+    def __init__(self, max_depth: int = 3) -> None:
         self.max_depth = max_depth
         self._md = mistune.create_markdown()
         add_toc_hook(
@@ -137,7 +137,7 @@ class MarkdownCollection:
     def __len__(self) -> int:
         return len(self._items)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[MarkdownContent]:
         return iter(self._items)
 
     def __getitem__(self, key: str) -> MarkdownContent:
@@ -185,7 +185,7 @@ class MarkdownParser:
         content_dir: Path,
         render_markdown: Callable[[str], str] | None = None,
         toc_generator: TocGenerator | None = None,
-    ):
+    ) -> None:
         self.content_dir = content_dir
         self.render_markdown = render_markdown
         self.toc_generator = toc_generator

@@ -4,6 +4,7 @@ from pathlib import Path
 
 CONFIG_FILENAME = "py-ssg.toml"
 STATIC_DIR_OUTPUT_MODES = ("static", "root")
+CONTENT_SORT_MODES = ("date_desc", "date_asc", "filename", "none")
 
 
 def _validate_static_dir_output(output_mode: str) -> str:
@@ -13,6 +14,17 @@ def _validate_static_dir_output(output_mode: str) -> str:
     supported_modes = '", "'.join(STATIC_DIR_OUTPUT_MODES)
     raise ValueError(
         f'Invalid static_dir_output value: "{output_mode}". '
+        f'Supported modes: "{supported_modes}".'
+    )
+
+
+def _validate_content_sort(content_sort: str) -> str:
+    if content_sort in CONTENT_SORT_MODES:
+        return content_sort
+
+    supported_modes = '", "'.join(CONTENT_SORT_MODES)
+    raise ValueError(
+        f'Invalid content_sort value: "{content_sort}". '
         f'Supported modes: "{supported_modes}".'
     )
 
@@ -96,6 +108,7 @@ class SiteConfig:
     description: str = ""
     static_dir: str = "static"
     static_dir_output: str = "static"
+    content_sort: str = "date_desc"
     authors: list[AuthorConfig] = field(default_factory=list)
     feeds: list[FeedConfig] = field(default_factory=list)
     cache: bool = True
@@ -122,12 +135,16 @@ class SiteConfig:
         static_dir_output = _validate_static_dir_output(
             str(data.get("static_dir_output", "static"))
         )
+        content_sort = _validate_content_sort(
+            str(data.get("content_sort", "date_desc"))
+        )
         return cls(
             name=str(data.get("name", "")),
             url=str(data.get("url", "")),
             description=str(data.get("description", "")),
             static_dir=str(data.get("static_dir", "static")),
             static_dir_output=static_dir_output,
+            content_sort=content_sort,
             authors=authors,
             feeds=feeds,
             cache=bool(data.get("cache", True)),
