@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import MagicMock, call, patch
 
 from pyssg.commands.build import (
@@ -289,6 +290,32 @@ def test_sort_content_supports_none() -> None:
     assert sorted_content == [first, second]
 
 
+def test_build_tag_map_groups_posts_by_tag_in_sorted_order() -> None:
+    command = SilentBuildCommand()
+    newest = MarkdownContent(
+        filename="newest.md",
+        html="",
+        timestamp="2025-01-01",
+        tags=["python", "release"],
+    )
+    older = MarkdownContent(
+        filename="older.md",
+        html="",
+        timestamp="2024-01-01",
+        tags=["python"],
+    )
+    undated = MarkdownContent(filename="undated.md", html="", tags=["notes"])
+
+    tag_map = command._build_tag_map([newest, older, undated])
+
+    assert isinstance(tag_map, MappingProxyType)
+    assert tag_map == {
+        "python": (newest, older),
+        "release": (newest,),
+        "notes": (undated,),
+    }
+
+
 @patch.object(BuildCommand, "_info")
 @patch(f"{TEST_PATH}.MarkdownParser")
 @patch(f"{TEST_PATH}.os.cpu_count")
@@ -384,13 +411,14 @@ def test_render_template_file_builds_static_template(tmp_path: Path) -> None:
         output_dir=output_dir,
         engine=engine,
         sorted_content=[post],
+        tag_map=MappingProxyType({"python": (post,)}),
         cache=cache,
     )
 
     assert result == TemplateRenderResult(built=True, cached=False)
     engine.render.assert_called_once_with(
         "<h1>Template</h1>",
-        context={"content": (post,)},
+        context={"content": (post,), "tags": MappingProxyType({"python": (post,)})},
     )
     cache.update.assert_called_once_with("index.html", "<h1>Template</h1>")
     assert (output_dir / "index.html").read_text(
@@ -416,6 +444,7 @@ def test_render_template_file_skips_unchanged_static_template(tmp_path: Path) ->
         output_dir=output_dir,
         engine=engine,
         sorted_content=[],
+        tag_map={},
         cache=cache,
     )
 
@@ -448,6 +477,7 @@ def test_render_template_file_does_not_update_cache_for_dynamic_templates(
         output_dir=output_dir,
         engine=engine,
         sorted_content=[],
+        tag_map={},
         cache=cache,
     )
 
@@ -510,6 +540,48 @@ def test_render_template_files_passes_immutable_sorted_content(tmp_path: Path) -
     render_context = engine.render.call_args.kwargs["context"]
     assert render_context["content"] == (newer, older)
     assert isinstance(render_context["content"], tuple)
+
+
+def test_render_template_files_passes_tags_mapping_to_templates(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "index.html").write_text("<h1>Home</h1>", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    newer = MarkdownContent(
+        filename="new.md",
+        html="",
+        timestamp="2025-01-01",
+        tags=["python", "release"],
+    )
+    older = MarkdownContent(
+        filename="old.md",
+        html="",
+        timestamp="2024-01-01",
+        tags=["python"],
+    )
+    engine = MagicMock()
+    engine.render.return_value = "<h1>Rendered</h1>"
+    cache = MagicMock()
+    cache.has_dynamic_constructs.return_value = False
+    cache.needs_rebuild.return_value = True
+    command = SilentBuildCommand()
+
+    command._render_template_files(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(older, newer),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    render_context = engine.render.call_args.kwargs["context"]
+    assert isinstance(render_context["tags"], MappingProxyType)
+    assert render_context["tags"] == {
+        "python": (newer, older),
+        "release": (newer,),
+    }
 
 
 def test_write_syntax_stylesheet_writes_css_file(tmp_path: Path) -> None:
