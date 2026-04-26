@@ -1,8 +1,9 @@
+from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
-from pyssg.commands.build import BuildCommand
+from pyssg.commands.build import BuildCommand, BuildPaths
 from pyssg.modules.build_script import BuildContext
-from pyssg.modules.config import SiteConfig, SyntaxConfig, TocConfig
+from pyssg.modules.config import FeedConfig, SiteConfig, SyntaxConfig, TocConfig
 from pyssg.modules.markdown import MarkdownCollection, MarkdownContent
 
 TEST_POST = MarkdownContent(filename="post.md", html="<p>Hi</p>", title="Post")
@@ -17,6 +18,8 @@ def _default_config(**overrides):
         name=overrides.get("name", ""),
         url=overrides.get("url", ""),
         description=overrides.get("description", ""),
+        static_dir=overrides.get("static_dir", "static"),
+        static_dir_output=overrides.get("static_dir_output", "static"),
         cache=overrides.get("cache", True),
         syntax=syntax,
         toc=toc,
@@ -32,6 +35,7 @@ def _setup_path_and_os(
     component_subdirs=None,
 ):
     """Common setup for path and os mocks."""
+    mock_path.side_effect = Path
     mock_path.cwd.return_value.__truediv__ = lambda self, x: f"/project/{x}"
     template_files = template_files or []
     component_files = component_files or []
@@ -451,6 +455,198 @@ class TestExecute:
             command.execute()
 
         mock_shutil.copytree.assert_not_called()
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_copies_static_directory_to_output_static(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        mock_os.path.isdir.side_effect = lambda path: str(path) == "/project/static"
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        assert mock_shutil.copytree.call_args_list[-1].args == (
+            "/project/static",
+            Path("/project/output/static"),
+        )
+        assert mock_shutil.copytree.call_args_list[-1].kwargs == {
+            "dirs_exist_ok": False
+        }
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_allows_existing_output_static_when_copying(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        mock_os.path.isdir.side_effect = lambda path: str(path) == "/project/static"
+        mock_os.path.exists.side_effect = lambda path: (
+            str(path) == "/project/output/static"
+        )
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_shutil.rmtree.assert_not_called()
+        assert mock_shutil.copytree.call_args_list[-1].args == (
+            "/project/static",
+            Path("/project/output/static"),
+        )
+        assert mock_shutil.copytree.call_args_list[-1].kwargs == {"dirs_exist_ok": True}
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_copies_static_directory_to_output_root_when_configured(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(static_dir_output="root")
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        mock_os.path.isdir.side_effect = lambda path: str(path) == "/project/static"
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_shutil.copytree.assert_called_once_with(
+            "/project/static", Path("/project/output"), dirs_exist_ok=False
+        )
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_allows_existing_output_root_when_copying(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config(static_dir_output="root")
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        mock_os.path.isdir.side_effect = lambda path: str(path) == "/project/static"
+        mock_os.path.exists.side_effect = lambda path: str(path) == "/project/output"
+        command = BuildCommand()
+
+        with patch.object(command, "_info"), patch.object(command, "_success"):
+            command.execute()
+
+        mock_shutil.copytree.assert_called_once_with(
+            "/project/static", Path("/project/output"), dirs_exist_ok=True
+        )
+
+    @patch(f"{TEST_PATH}.BuildScript")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open, read_data="<h1>Template</h1>")
+    @patch(f"{TEST_PATH}.os")
+    @patch(f"{TEST_PATH}.HtmlTemplateEngine")
+    @patch(f"{TEST_PATH}.MarkdownParser")
+    @patch(f"{TEST_PATH}.Path")
+    def test_outputs_info_message_when_static_assets_are_copied(
+        self,
+        mock_path,
+        mock_parser_cls,
+        mock_engine_cls,
+        mock_os,
+        mock_file,
+        mock_cache_cls,
+        mock_config_cls,
+        mock_shutil,
+        mock_script_cls,
+    ):
+        _setup_path_and_os(mock_path, mock_os, template_files=["index.html"])
+        _setup_cache(mock_cache_cls)
+        mock_config_cls.load.return_value = _default_config()
+        mock_parser_cls.return_value.parse.return_value = MarkdownCollection()
+        mock_engine_cls.return_value.render.return_value = "<h1>Rendered</h1>"
+        mock_os.path.isdir.side_effect = lambda path: str(path) == "/project/static"
+        command = BuildCommand()
+
+        with (
+            patch.object(command, "_info") as mock_info,
+            patch.object(command, "_success"),
+        ):
+            command.execute()
+
+        mock_info.assert_any_call("Copied static assets -> output/static/")
 
     @patch(f"{TEST_PATH}.BuildScript")
     @patch(f"{TEST_PATH}.time")
@@ -1554,3 +1750,120 @@ class TestBuildScript:
             command.execute()
 
         assert captured_content["content"] is None
+
+
+class TestHelpers:
+    @patch(f"{TEST_PATH}.Path")
+    def test_build_paths_uses_project_directories(self, mock_path):
+        mock_project_dir = Path("/project")
+        mock_path.cwd.return_value = mock_project_dir
+        command = BuildCommand()
+
+        paths = command._build_paths()
+
+        assert paths == BuildPaths(
+            project_dir=mock_project_dir,
+            templates_dir=Path("/project/templates"),
+            components_dir=Path("/project/components"),
+            output_dir=Path("/project/output"),
+        )
+
+    @patch(f"{TEST_PATH}.SyntaxHighlighter")
+    def test_create_highlighter_returns_instance_when_enabled(
+        self, mock_highlighter_cls
+    ):
+        config = _default_config(
+            syntax=SyntaxConfig(enabled=True, theme_light="tango", theme_dark="dracula")
+        )
+        command = BuildCommand()
+
+        highlighter = command._create_highlighter(config)
+
+        assert highlighter is mock_highlighter_cls.return_value
+        mock_highlighter_cls.assert_called_once_with(
+            theme_light="tango",
+            theme_dark="dracula",
+        )
+
+    def test_create_highlighter_returns_none_when_disabled(self):
+        command = BuildCommand()
+
+        highlighter = command._create_highlighter(
+            _default_config(syntax=SyntaxConfig(enabled=False))
+        )
+
+        assert highlighter is None
+
+    @patch(f"{TEST_PATH}.TocGenerator")
+    def test_create_toc_generator_returns_instance_when_enabled(self, mock_toc_cls):
+        config = _default_config(toc=TocConfig(enabled=True, max_depth=4))
+        command = BuildCommand()
+
+        toc_generator = command._create_toc_generator(config)
+
+        assert toc_generator is mock_toc_cls.return_value
+        mock_toc_cls.assert_called_once_with(max_depth=4)
+
+    def test_create_toc_generator_returns_none_when_disabled(self):
+        command = BuildCommand()
+
+        toc_generator = command._create_toc_generator(
+            _default_config(toc=TocConfig(enabled=False))
+        )
+
+        assert toc_generator is None
+
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open)
+    @patch(f"{TEST_PATH}.RssFeedGenerator")
+    def test_generate_feeds_writes_each_feed_and_returns_count(
+        self,
+        mock_generator_cls,
+        mock_file,
+    ):
+        config = _default_config()
+        config.feeds = [FeedConfig(title="Main"), FeedConfig(title="News")]
+        collection = MarkdownCollection()
+        collection.add(TEST_POST)
+        mock_generator_cls.return_value.generate.return_value = [
+            ("feed.xml", "<rss />"),
+            ("news.xml", "<rss />"),
+        ]
+        command = BuildCommand()
+
+        with patch.object(command, "_info") as mock_info:
+            feed_count = command._generate_feeds(
+                config=config,
+                output_dir=Path("/project/output"),
+                collection=collection,
+            )
+
+        assert feed_count == 2
+        mock_info.assert_called_once_with("Generating RSS feeds...")
+        mock_generator_cls.assert_called_once_with(config=config)
+        assert [call.args for call in mock_file.call_args_list] == [
+            ("/project/output/feed.xml", "w"),
+            ("/project/output/news.xml", "w"),
+        ]
+
+    @patch(f"{TEST_PATH}.open", new_callable=mock_open)
+    @patch(f"{TEST_PATH}.RssFeedGenerator")
+    def test_generate_feeds_skips_generator_when_no_feeds_configured(
+        self,
+        mock_generator_cls,
+        mock_file,
+    ):
+        config = _default_config()
+        config.feeds = []
+        command = BuildCommand()
+
+        with patch.object(command, "_info") as mock_info:
+            feed_count = command._generate_feeds(
+                config=config,
+                output_dir=Path("/project/output"),
+                collection=MarkdownCollection(),
+            )
+
+        assert feed_count == 0
+        mock_info.assert_not_called()
+        mock_generator_cls.assert_not_called()
+        mock_file.assert_not_called()

@@ -9,6 +9,7 @@ TEST_PATH = "pyssg.commands.serve"
 
 def _default_config(**overrides):
     return SiteConfig(
+        static_dir=overrides.get("static_dir", "static"),
         server=overrides.get("server", ServerConfig()),
     )
 
@@ -140,6 +141,36 @@ class TestExecute:
         assert Path("/project/templates") in directories
         assert Path("/project/components") in directories
         mock_watcher.start.assert_called_once()
+
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.Watcher")
+    @patch(f"{TEST_PATH}.Server")
+    @patch(f"{TEST_PATH}.BuildCommand")
+    @patch(f"{TEST_PATH}.Path")
+    def test_starts_watcher_on_static_directory_when_present(
+        self,
+        mock_path,
+        mock_build_cls,
+        mock_server_cls,
+        mock_watcher_cls,
+        mock_config_cls,
+    ):
+        mock_path.cwd.return_value = Path("/project")
+        mock_config_cls.load.return_value = _default_config(static_dir="public")
+        mock_server = MagicMock()
+        mock_server_cls.return_value = mock_server
+        mock_watcher = MagicMock()
+        mock_watcher_cls.return_value = mock_watcher
+        command = ServeCommand(port=8000)
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch.object(command, "_wait_forever", side_effect=KeyboardInterrupt),
+        ):
+            command.execute()
+
+        directories = mock_watcher_cls.call_args.kwargs["directories"]
+        assert Path("/project/public") in directories
 
     @patch(f"{TEST_PATH}.SiteConfig")
     @patch(f"{TEST_PATH}.Watcher")

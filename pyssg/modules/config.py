@@ -3,6 +3,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 CONFIG_FILENAME = "py-ssg.toml"
+STATIC_DIR_OUTPUT_MODES = ("static", "root")
+
+
+def _validate_static_dir_output(output_mode: str) -> str:
+    if output_mode in STATIC_DIR_OUTPUT_MODES:
+        return output_mode
+
+    supported_modes = '", "'.join(STATIC_DIR_OUTPUT_MODES)
+    raise ValueError(
+        f'Invalid static_dir_output value: "{output_mode}". '
+        f'Supported modes: "{supported_modes}".'
+    )
 
 
 @dataclass
@@ -82,6 +94,8 @@ class SiteConfig:
     name: str = ""
     url: str = ""
     description: str = ""
+    static_dir: str = "static"
+    static_dir_output: str = "static"
     authors: list[AuthorConfig] = field(default_factory=list)
     feeds: list[FeedConfig] = field(default_factory=list)
     cache: bool = True
@@ -105,10 +119,15 @@ class SiteConfig:
         syntax = SyntaxConfig.from_dict(data.get("syntax", {}))
         server = ServerConfig.from_dict(data.get("server", {}))
         toc = TocConfig.from_dict(data.get("toc", {}))
+        static_dir_output = _validate_static_dir_output(
+            str(data.get("static_dir_output", "static"))
+        )
         return cls(
             name=str(data.get("name", "")),
             url=str(data.get("url", "")),
             description=str(data.get("description", "")),
+            static_dir=str(data.get("static_dir", "static")),
+            static_dir_output=static_dir_output,
             authors=authors,
             feeds=feeds,
             cache=bool(data.get("cache", True)),

@@ -3,6 +3,8 @@ name = "Blog Name"
 url = "https://yourblog.dev"
 description = "My blog"
 cache = true
+static_dir = "static"
+static_dir_output = "static"
 
 [py-ssg.server]
 port = 8000

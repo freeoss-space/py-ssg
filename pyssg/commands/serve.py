@@ -2,7 +2,7 @@ import time
 from pathlib import Path
 
 from pyssg.commands.base_command import BaseCommand
-from pyssg.commands.build import BuildCommand
+from pyssg.commands.build import BuildCommand, ProjectDirectory
 from pyssg.modules.config import SiteConfig
 from pyssg.modules.server import Server
 from pyssg.modules.watcher import Watcher
@@ -21,16 +21,21 @@ class ServeCommand(BaseCommand):
         self._info("Running initial build...")
         self._rebuild()
 
-        server = Server(directory=project_dir / "output", port=port)
+        server = Server(directory=project_dir / ProjectDirectory.OUTPUT, port=port)
         server.start()
         self._success(f"Serving on http://localhost:{port}")
 
+        directories = [
+            project_dir / ProjectDirectory.CONTENT,
+            project_dir / ProjectDirectory.TEMPLATES,
+            project_dir / ProjectDirectory.COMPONENTS,
+        ]
+        static_dir = project_dir / config.static_dir
+        if static_dir.exists():
+            directories.append(static_dir)
+
         watcher = Watcher(
-            directories=[
-                project_dir / "content",
-                project_dir / "templates",
-                project_dir / "components",
-            ],
+            directories=directories,
             on_change=self._rebuild,
         )
         watcher.start()
