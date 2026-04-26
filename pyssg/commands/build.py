@@ -1,10 +1,12 @@
 import os
 import shutil
 import time
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 
 from pyssg.commands.base_command import BaseCommand
 from pyssg.modules.build_script import BuildContext, BuildScript
@@ -97,6 +99,9 @@ class RenderSummary:
 class TemplateRenderResult:
     built: bool
     cached: bool
+
+
+type TagMap = Mapping[str, Sequence[MarkdownContent]]
 
 
 class BuildCommand(BaseCommand):
@@ -268,6 +273,7 @@ class BuildCommand(BaseCommand):
         built_files = 0
         cached_files = 0
         sorted_content = self._sort_content(collection, content_sort)
+        tag_map = self._build_tag_map(sorted_content)
 
         for filename in os.listdir(templates_dir):
             if not filename.endswith(".html"):
@@ -280,6 +286,7 @@ class BuildCommand(BaseCommand):
                 output_dir=output_dir,
                 engine=engine,
                 sorted_content=sorted_content,
+                tag_map=tag_map,
                 cache=cache,
             )
             if result.cached:
@@ -296,6 +303,7 @@ class BuildCommand(BaseCommand):
         output_dir: Path,
         engine: HtmlTemplateEngine,
         sorted_content: list[MarkdownContent],
+        tag_map: TagMap,
         cache: BuildCache,
     ) -> TemplateRenderResult:
         filepath = os.path.join(templates_dir, filename)
@@ -306,7 +314,10 @@ class BuildCommand(BaseCommand):
         if not is_dynamic and not cache.needs_rebuild(filename, template):
             return TemplateRenderResult(built=False, cached=True)
 
-        rendered = engine.render(template, context={"content": tuple(sorted_content)})
+        rendered = engine.render(
+            template,
+            context={"content": tuple(sorted_content), "tags": tag_map},
+        )
         output_path = os.path.join(output_dir, filename)
         with open(output_path, "w") as f:
             f.write(rendered)
@@ -329,6 +340,14 @@ class BuildCommand(BaseCommand):
         reverse = content_sort == "date_desc"
         sorted_dated = sorted(dated, key=lambda post: post.timestamp, reverse=reverse)
         return sorted_dated + undated
+
+    def _build_tag_map(self, sorted_content: list[MarkdownContent]) -> TagMap:
+        tag_map: defaultdict[str, list[MarkdownContent]] = defaultdict(list)
+        for post in sorted_content:
+            for tag in post.tags:
+                tag_map[tag].append(post)
+        frozen_tag_map = {tag: tuple(posts) for tag, posts in tag_map.items()}
+        return MappingProxyType(frozen_tag_map)
 
     def _write_syntax_stylesheet(
         self,

@@ -12,6 +12,7 @@
 
 - Type every method parameter explicitly.
 - Type return values explicitly.
+- Do not use `...` for typing.
 - Avoid introducing implicit `Any` in production code.
 - When adding helpers, keep signatures narrow and concrete.
 - If a shape becomes complex, such as nested `dict`, `list`, `tuple`, or mixed container data, introduce a dedicated type instead of passing raw nested structures around.
