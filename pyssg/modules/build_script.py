@@ -22,7 +22,7 @@ class BuildContext:
 
 
 class BuildScript:
-    def __init__(self, project_dir: Path):
+    def __init__(self, project_dir: Path) -> None:
         self._module: ModuleType | None = None
         script_path = project_dir / SCRIPT_FILENAME
         if script_path.exists():

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class InitCommand(BaseCommand):
-    def __init__(self, folder_name: str):
+    def __init__(self, folder_name: str) -> None:
         self.folder_name = folder_name
 
     def _create_folder(self) -> bool:

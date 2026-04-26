@@ -135,6 +135,7 @@ description = "My blog"
 cache = true                    # Enable incremental build caching
 static_dir = "static"           # Source directory for copied assets
 static_dir_output = "static"    # "static" -> output/static, "root" -> output/
+content_sort = "date_desc"      # "date_desc", "date_asc", "filename", or "none"
 
 [py-ssg.server]
 port = 8000                     # Dev server port
@@ -242,7 +243,7 @@ All templates receive:
 | Variable | Description |
 |----------|-------------|
 | `site` | Site configuration object (`site.name`, `site.url`, `site.description`, `site.authors`, `site.feeds`) |
-| `content` | List of all `MarkdownContent` objects |
+| `content` | List of all `MarkdownContent` objects, sorted by `site.content_sort` (default: newest `timestamp` first, undated posts last) |
 
 ### Example Template
 

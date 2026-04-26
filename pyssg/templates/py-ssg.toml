@@ -5,6 +5,7 @@ description = "My blog"
 cache = true
 static_dir = "static"
 static_dir_output = "static"
+content_sort = "date_desc"
 
 [py-ssg.server]
 port = 8000

@@ -1,6 +1,7 @@
 import os
 import shutil
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -10,7 +11,12 @@ from pyssg.modules.build_script import BuildContext, BuildScript
 from pyssg.modules.cache import BuildCache
 from pyssg.modules.config import SiteConfig
 from pyssg.modules.html import HtmlTemplateEngine
-from pyssg.modules.markdown import MarkdownParser, TocGenerator
+from pyssg.modules.markdown import (
+    MarkdownCollection,
+    MarkdownContent,
+    MarkdownParser,
+    TocGenerator,
+)
 from pyssg.modules.rss import RssFeedGenerator
 from pyssg.modules.syntax import SyntaxHighlighter
 
@@ -85,6 +91,12 @@ class RenderSummary:
     cached_files: int
     component_names: list[str]
     rendering_time: float
+
+
+@dataclass
+class TemplateRenderResult:
+    built: bool
+    cached: bool
 
 
 class BuildCommand(BaseCommand):
@@ -168,9 +180,9 @@ class BuildCommand(BaseCommand):
         self,
         paths: BuildPaths,
         config: SiteConfig,
-        render_markdown,
+        render_markdown: Callable[[str], str] | None,
         toc_generator: TocGenerator | None,
-    ):
+    ) -> tuple[MarkdownCollection, float]:
         self._info("Parsing markdown files...")
         parsing_start = time.perf_counter()
         parser = MarkdownParser(
@@ -197,7 +209,7 @@ class BuildCommand(BaseCommand):
         paths: BuildPaths,
         config: SiteConfig,
         cache: BuildCache,
-        collection,
+        collection: MarkdownCollection,
         highlighter: SyntaxHighlighter | None,
     ) -> RenderSummary:
         self._info("Rendering templates...")
@@ -218,6 +230,7 @@ class BuildCommand(BaseCommand):
             engine=engine,
             collection=collection,
             cache=cache,
+            content_sort=config.content_sort,
         )
         self._write_syntax_stylesheet(
             output_dir=paths.output_dir, highlighter=highlighter
@@ -247,37 +260,75 @@ class BuildCommand(BaseCommand):
         templates_dir: Path,
         output_dir: Path,
         engine: HtmlTemplateEngine,
-        collection,
+        collection: MarkdownCollection,
         cache: BuildCache,
+        content_sort: str,
     ) -> tuple[int, int, int]:
         total_files = 0
         built_files = 0
         cached_files = 0
+        sorted_content = self._sort_content(collection, content_sort)
 
         for filename in os.listdir(templates_dir):
             if not filename.endswith(".html"):
                 continue
 
             total_files += 1
-            filepath = os.path.join(templates_dir, filename)
-            with open(filepath) as f:
-                template = f.read()
-
-            is_dynamic = cache.has_dynamic_constructs(template)
-            if not is_dynamic and not cache.needs_rebuild(filename, template):
+            result = self._render_template_file(
+                filename=filename,
+                templates_dir=templates_dir,
+                output_dir=output_dir,
+                engine=engine,
+                sorted_content=sorted_content,
+                cache=cache,
+            )
+            if result.cached:
                 cached_files += 1
-                continue
-
-            rendered = engine.render(template, context={"content": list(collection)})
-            output_path = os.path.join(output_dir, filename)
-            with open(output_path, "w") as f:
-                f.write(rendered)
-
-            if not is_dynamic:
-                cache.update(filename, template)
-            built_files += 1
+            if result.built:
+                built_files += 1
 
         return total_files, built_files, cached_files
+
+    def _render_template_file(
+        self,
+        filename: str,
+        templates_dir: Path,
+        output_dir: Path,
+        engine: HtmlTemplateEngine,
+        sorted_content: list[MarkdownContent],
+        cache: BuildCache,
+    ) -> TemplateRenderResult:
+        filepath = os.path.join(templates_dir, filename)
+        with open(filepath) as f:
+            template = f.read()
+
+        is_dynamic = cache.has_dynamic_constructs(template)
+        if not is_dynamic and not cache.needs_rebuild(filename, template):
+            return TemplateRenderResult(built=False, cached=True)
+
+        rendered = engine.render(template, context={"content": tuple(sorted_content)})
+        output_path = os.path.join(output_dir, filename)
+        with open(output_path, "w") as f:
+            f.write(rendered)
+
+        if not is_dynamic:
+            cache.update(filename, template)
+        return TemplateRenderResult(built=True, cached=False)
+
+    def _sort_content(
+        self, collection: MarkdownCollection, content_sort: str
+    ) -> list[MarkdownContent]:
+        items = list(collection)
+        if content_sort == "none":
+            return items
+        if content_sort == "filename":
+            return sorted(items, key=lambda post: post.filename)
+
+        dated = [post for post in items if post.timestamp]
+        undated = [post for post in items if not post.timestamp]
+        reverse = content_sort == "date_desc"
+        sorted_dated = sorted(dated, key=lambda post: post.timestamp, reverse=reverse)
+        return sorted_dated + undated
 
     def _write_syntax_stylesheet(
         self,
@@ -299,7 +350,12 @@ class BuildCommand(BaseCommand):
         if static_output:
             self._info(f"Copied static assets -> {static_output}")
 
-    def _generate_feeds(self, config: SiteConfig, output_dir: Path, collection) -> int:
+    def _generate_feeds(
+        self,
+        config: SiteConfig,
+        output_dir: Path,
+        collection: MarkdownCollection,
+    ) -> int:
         if not config.feeds:
             return 0
 

@@ -63,7 +63,7 @@ class _ComponentParser(HTMLParser):
     def _to_offset(self, line: int, col: int) -> int:
         return self._line_offsets[line - 1] + col
 
-    def handle_starttag(self, tag: str, attrs: list) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         raw = self.get_starttag_text()
         if not raw:
             return
@@ -75,7 +75,7 @@ class _ComponentParser(HTMLParser):
         open_end = start + len(raw)
         self._stack.append((real_name, start, open_end, real_attrs))
 
-    def handle_startendtag(self, tag: str, attrs: list) -> None:
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         raw = self.get_starttag_text()
         if not raw:
             return
@@ -167,7 +167,7 @@ class HtmlTemplateEngine:
         components_dir: Path | None = None,
         component_names: list[str] | None = None,
         config: SiteConfig | None = None,
-    ):
+    ) -> None:
         self.templates_dir = templates_dir
         self.components_dir = components_dir
         self.component_names = component_names or []
