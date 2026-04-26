@@ -130,6 +130,7 @@ class BuildCommand(BaseCommand):
         collection, parsing_time = self._parse_markdown(
             paths=paths,
             config=config,
+            cache=cache,
             render_markdown=render_markdown,
             toc_generator=toc_generator,
         )
@@ -185,6 +186,7 @@ class BuildCommand(BaseCommand):
         self,
         paths: BuildPaths,
         config: SiteConfig,
+        cache: BuildCache,
         render_markdown: Callable[[str], str] | None,
         toc_generator: TocGenerator | None,
     ) -> tuple[MarkdownCollection, float]:
@@ -192,20 +194,23 @@ class BuildCommand(BaseCommand):
         parsing_start = time.perf_counter()
         parser = MarkdownParser(
             content_dir=paths.project_dir / ProjectDirectory.CONTENT,
+            cache=cache,
             render_markdown=render_markdown,
             toc_generator=toc_generator,
         )
+        syntax_config = {
+            "enabled": config.syntax.enabled,
+            "theme_light": config.syntax.theme_light,
+            "theme_dark": config.syntax.theme_dark,
+        }
+        toc_config = {
+            "enabled": config.toc.enabled,
+            "max_depth": config.toc.max_depth,
+        }
         collection = parser.parse(
             workers=os.cpu_count() or 1,
-            syntax_config={
-                "enabled": config.syntax.enabled,
-                "theme_light": config.syntax.theme_light,
-                "theme_dark": config.syntax.theme_dark,
-            },
-            toc_config={
-                "enabled": config.toc.enabled,
-                "max_depth": config.toc.max_depth,
-            },
+            syntax_config=syntax_config,
+            toc_config=toc_config,
         )
         return collection, time.perf_counter() - parsing_start
 

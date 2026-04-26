@@ -1,10 +1,16 @@
+import json
+from datetime import date, datetime
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
+from pyssg.modules.cache import BuildCache
 from pyssg.modules.markdown import (
     ContentAuthor,
     MarkdownCollection,
     MarkdownContent,
     MarkdownParser,
+    ParallelParseConfig,
+    PendingParseItem,
     TocGenerator,
 )
 
@@ -41,6 +47,16 @@ class TestContentAuthor:
         author = ContentAuthor.from_post(post)
 
         assert author == ContentAuthor()
+
+    def test_to_dict_round_trips_with_from_dict(self):
+        author = ContentAuthor(
+            name="Jane",
+            email="jane@example.com",
+            avatar="avatar.png",
+            url="https://example.com",
+        )
+
+        assert ContentAuthor.from_dict(author.to_dict()) == author
 
 
 class TestMarkdownContent:
@@ -101,6 +117,48 @@ class TestMarkdownContent:
         assert content.title == ""
         assert content.tags == []
         assert "<p>Just plain markdown</p>" in content.html
+
+    def test_to_dict_round_trips_with_from_dict(self):
+        content = MarkdownContent(
+            filename="post.md",
+            html="<p>Hello</p>",
+            title="Post",
+            timestamp="2025-01-15",
+            tags=["python"],
+            author=ContentAuthor(name="Jane", email="jane@example.com"),
+            custom_fields=SimpleNamespace(slug="post", draft=True),
+            toc="<nav>...</nav>",
+        )
+
+        restored = MarkdownContent.from_dict(content.to_dict())
+
+        assert restored == content
+
+    def test_to_dict_normalizes_non_json_custom_fields(self):
+        content = MarkdownContent(
+            filename="post.md",
+            html="<p>Hello</p>",
+            custom_fields=SimpleNamespace(
+                published_on=date(2025, 1, 15),
+                updated_at=datetime(2025, 1, 15, 12, 30, 45),
+                metadata={
+                    "reviewed_on": date(2025, 1, 16),
+                    "history": [datetime(2025, 1, 17, 8, 0, 0)],
+                },
+            ),
+        )
+
+        data = content.to_dict()
+
+        assert data["custom_fields"] == {
+            "published_on": "2025-01-15",
+            "updated_at": "2025-01-15 12:30:45",
+            "metadata": {
+                "reviewed_on": "2025-01-16",
+                "history": ["2025-01-17 08:00:00"],
+            },
+        }
+        json.dumps(data)
 
 
 class TestMarkdownCollection:
@@ -212,6 +270,163 @@ class TestParse:
         assert "docs/api.md" in result
         assert result["blog/2025/post.md"].filename == "blog/2025/post.md"
         assert result["docs/api.md"].filename == "docs/api.md"
+
+    @patch("pyssg.modules.markdown.MarkdownContent.from_raw")
+    def test_uses_cached_content_in_sequential_mode(
+        self, mock_from_raw: MagicMock, tmp_path
+    ):
+        raw = "# Hello\n\nWorld"
+        (tmp_path / "post.md").write_text(raw)
+        cache = BuildCache(cache_dir=tmp_path)
+        cached_content = MarkdownContent(
+            filename="post.md",
+            html="<p>cached</p>",
+            title="Cached",
+        )
+        config_key = json.dumps(
+            {"syntax": {}, "toc": {}}, sort_keys=True, separators=(",", ":")
+        )
+        cache.set_content("post.md", raw, config_key, cached_content.to_dict())
+        parser = MarkdownParser(content_dir=tmp_path, cache=cache)
+
+        result = parser.parse()
+
+        mock_from_raw.assert_not_called()
+        assert result["post.md"] == cached_content
+
+    @patch("pyssg.modules.markdown.ProcessPoolExecutor")
+    def test_parallel_mode_only_dispatches_uncached_files(
+        self, mock_executor_cls: MagicMock, tmp_path
+    ):
+        raw_a = "# Cached"
+        raw_b = "# Fresh"
+        (tmp_path / "a.md").write_text(raw_a)
+        (tmp_path / "b.md").write_text(raw_b)
+        cache = BuildCache(cache_dir=tmp_path)
+        cached_content = MarkdownContent(filename="a.md", html="<p>cached</p>")
+        config_key = json.dumps(
+            {
+                "syntax": {"enabled": False},
+                "toc": {"enabled": False},
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        cache.set_content("a.md", raw_a, config_key, cached_content.to_dict())
+        fresh_content = MarkdownContent(filename="b.md", html="<p>fresh</p>")
+        mock_executor = mock_executor_cls.return_value.__enter__.return_value
+        mock_executor.map.return_value = [fresh_content]
+        parser = MarkdownParser(content_dir=tmp_path, cache=cache)
+
+        result = parser.parse(
+            workers=2,
+            syntax_config={"enabled": False},
+            toc_config={"enabled": False},
+        )
+
+        mock_executor.map.assert_called_once_with(
+            mock_executor.map.call_args.args[0],
+            [("b.md", raw_b)],
+            chunksize=64,
+        )
+        assert list(result) == [cached_content, fresh_content]
+        assert cache.get_content("b.md", raw_b, config_key) == fresh_content.to_dict()
+
+
+class TestParallelHelpers:
+    def test_build_parallel_config_uses_defaults(self, tmp_path):
+        parser = MarkdownParser(content_dir=tmp_path)
+
+        config = parser._build_parallel_config(None, None)
+
+        assert config == ParallelParseConfig(
+            syntax_enabled=False,
+            theme_light="friendly",
+            theme_dark="monokai",
+            toc_enabled=False,
+            toc_max_depth=3,
+        )
+
+    def test_build_parallel_config_uses_provided_values(self, tmp_path):
+        parser = MarkdownParser(content_dir=tmp_path)
+
+        config = parser._build_parallel_config(
+            {"enabled": True, "theme_light": "tango", "theme_dark": "dracula"},
+            {"enabled": True, "max_depth": 5},
+        )
+
+        assert config == ParallelParseConfig(
+            syntax_enabled=True,
+            theme_light="tango",
+            theme_dark="dracula",
+            toc_enabled=True,
+            toc_max_depth=5,
+        )
+
+    def test_partition_cached_items_splits_cached_and_pending(self, tmp_path):
+        raw_a = "# Cached"
+        raw_b = "# Fresh"
+        cache = BuildCache(cache_dir=tmp_path)
+        parser = MarkdownParser(content_dir=tmp_path, cache=cache)
+        config_key = json.dumps(
+            {"syntax": {}, "toc": {}}, sort_keys=True, separators=(",", ":")
+        )
+        cached_content = MarkdownContent(filename="a.md", html="<p>cached</p>")
+        cache.set_content("a.md", raw_a, config_key, cached_content.to_dict())
+
+        results, pending_items = parser._partition_cached_items(
+            [("a.md", raw_a), ("b.md", raw_b)],
+            config_key,
+        )
+
+        assert results == {0: cached_content}
+        assert pending_items == [PendingParseItem(index=1, filename="b.md", raw=raw_b)]
+
+    def test_worker_items_extract_filename_and_raw(self, tmp_path):
+        parser = MarkdownParser(content_dir=tmp_path)
+        pending_items = [
+            PendingParseItem(index=1, filename="b.md", raw="# Fresh"),
+            PendingParseItem(index=2, filename="c.md", raw="# New"),
+        ]
+
+        assert parser._worker_items(pending_items) == [
+            ("b.md", "# Fresh"),
+            ("c.md", "# New"),
+        ]
+
+    def test_store_parsed_results_preserves_index_and_updates_cache(self, tmp_path):
+        cache = BuildCache(cache_dir=tmp_path)
+        parser = MarkdownParser(content_dir=tmp_path, cache=cache)
+        config_key = json.dumps(
+            {"syntax": {}, "toc": {}}, sort_keys=True, separators=(",", ":")
+        )
+        results: dict[int, MarkdownContent] = {}
+        pending_items = [PendingParseItem(index=1, filename="b.md", raw="# Fresh")]
+        parsed_contents = iter([MarkdownContent(filename="b.md", html="<p>fresh</p>")])
+
+        parser._store_parsed_results(
+            results,
+            pending_items,
+            parsed_contents,
+            config_key,
+        )
+
+        assert results == {1: MarkdownContent(filename="b.md", html="<p>fresh</p>")}
+        assert (
+            cache.get_content("b.md", "# Fresh", config_key)
+            == MarkdownContent(filename="b.md", html="<p>fresh</p>").to_dict()
+        )
+
+    def test_build_collection_from_results_restores_original_order(self, tmp_path):
+        parser = MarkdownParser(content_dir=tmp_path)
+        results = {
+            0: MarkdownContent(filename="a.md", html="<p>a</p>"),
+            1: MarkdownContent(filename="b.md", html="<p>b</p>"),
+        }
+
+        collection = parser._build_collection_from_results(2, results)
+
+        assert list(collection) == [results[0], results[1]]
 
 
 class TestParseFrontmatter:

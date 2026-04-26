@@ -1,15 +1,18 @@
+import json
 import re
 from collections.abc import Callable, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, TypedDict, cast
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 import frontmatter
 import mistune
 from mistune.toc import add_toc_hook
+
+from pyssg.modules.cache import BuildCache
 
 _AUTHOR_KEYS = frozenset({"author", "author_email", "author_avatar", "author_url"})
 
@@ -19,6 +22,19 @@ def _slugify(text: str) -> str:
     slug = re.sub(r"[^\w\s-]", "", slug)
     slug = re.sub(r"[\s]+", "-", slug).strip("-")
     return slug
+
+
+def _to_json_safe_value(value: object) -> object:
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, list | tuple):
+        return [_to_json_safe_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _to_json_safe_value(item_value)
+            for key, item_value in value.items()
+        }
+    return str(value)
 
 
 class TocGenerator:
@@ -79,6 +95,57 @@ class ContentAuthor:
             url=str(post.get("author_url", "")),
         )
 
+    def to_dict(self) -> "ContentAuthorData":
+        return {
+            "name": self.name,
+            "email": self.email,
+            "avatar": self.avatar,
+            "url": self.url,
+        }
+
+    @classmethod
+    def from_dict(cls, data: "ContentAuthorData") -> "ContentAuthor":
+        return cls(
+            name=str(data.get("name", "")),
+            email=str(data.get("email", "")),
+            avatar=str(data.get("avatar", "")),
+            url=str(data.get("url", "")),
+        )
+
+
+class ContentAuthorData(TypedDict):
+    name: str
+    email: str
+    avatar: str
+    url: str
+
+
+class MarkdownContentData(TypedDict):
+    filename: str
+    html: str
+    title: str
+    timestamp: str
+    tags: list[str]
+    author: ContentAuthorData
+    custom_fields: dict[str, object]
+    toc: str
+
+
+@dataclass(frozen=True)
+class ParallelParseConfig:
+    syntax_enabled: bool
+    theme_light: str
+    theme_dark: str
+    toc_enabled: bool
+    toc_max_depth: int
+
+
+@dataclass(frozen=True)
+class PendingParseItem:
+    index: int
+    filename: str
+    raw: str
+
 
 @dataclass
 class MarkdownContent:
@@ -123,6 +190,42 @@ class MarkdownContent:
             author=ContentAuthor.from_post(post),
             custom_fields=custom,
             toc=toc,
+        )
+
+    def to_dict(self) -> MarkdownContentData:
+        return {
+            "filename": self.filename,
+            "html": self.html,
+            "title": self.title,
+            "timestamp": self.timestamp,
+            "tags": list(self.tags),
+            "author": self.author.to_dict(),
+            "custom_fields": cast(
+                dict[str, object],
+                _to_json_safe_value(dict(vars(self.custom_fields))),
+            ),
+            "toc": self.toc,
+        }
+
+    @classmethod
+    def from_dict(cls, data: MarkdownContentData) -> "MarkdownContent":
+        raw_tags = data.get("tags", [])
+        tags = [str(tag) for tag in raw_tags] if isinstance(raw_tags, list) else []
+        custom_fields_data = data.get("custom_fields", {})
+        if not isinstance(custom_fields_data, dict):
+            custom_fields_data = {}
+        author_data = data.get("author", ContentAuthor().to_dict())
+        if not isinstance(author_data, dict):
+            author_data = ContentAuthor().to_dict()
+        return cls(
+            filename=str(data.get("filename", "")),
+            html=str(data.get("html", "")),
+            title=str(data.get("title", "")),
+            timestamp=str(data.get("timestamp", "")),
+            tags=tags,
+            author=ContentAuthor.from_dict(author_data),
+            custom_fields=SimpleNamespace(**cast(dict[str, Any], custom_fields_data)),
+            toc=str(data.get("toc", "")),
         )
 
 
@@ -182,10 +285,12 @@ class MarkdownParser:
     def __init__(
         self,
         content_dir: Path,
+        cache: BuildCache | None = None,
         render_markdown: Callable[[str], str] | None = None,
         toc_generator: TocGenerator | None = None,
     ) -> None:
         self.content_dir = content_dir
+        self.cache = cache
         self.render_markdown = render_markdown
         self.toc_generator = toc_generator
 
@@ -204,55 +309,159 @@ class MarkdownParser:
         syntax_config: dict[str, Any] | None = None,
         toc_config: dict[str, Any] | None = None,
     ) -> MarkdownCollection:
+        config_key = self._build_config_key(syntax_config, toc_config)
         if workers > 1 and (syntax_config is not None or toc_config is not None):
-            return self._parse_parallel(workers, syntax_config, toc_config)
-        return self._parse_sequential()
+            return self._parse_parallel(workers, config_key, syntax_config, toc_config)
+        return self._parse_sequential(config_key)
 
-    def _parse_sequential(self) -> MarkdownCollection:
+    def _build_config_key(
+        self,
+        syntax_config: dict[str, Any] | None,
+        toc_config: dict[str, Any] | None,
+    ) -> str:
+        return json.dumps(
+            {"syntax": syntax_config or {}, "toc": toc_config or {}},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def _get_cached_content(
+        self, filename: str, raw: str, config_key: str
+    ) -> MarkdownContent | None:
+        if self.cache is None:
+            return None
+        cached = self.cache.get_content(filename, raw, config_key)
+        if cached is None:
+            return None
+        return MarkdownContent.from_dict(cast(MarkdownContentData, cached))
+
+    def _cache_content(
+        self, filename: str, raw: str, config_key: str, content: MarkdownContent
+    ) -> None:
+        if self.cache is None:
+            return
+        self.cache.set_content(filename, raw, config_key, content.to_dict())
+
+    def _build_parallel_config(
+        self,
+        syntax_config: dict[str, Any] | None,
+        toc_config: dict[str, Any] | None,
+    ) -> ParallelParseConfig:
+        return ParallelParseConfig(
+            syntax_enabled=bool(syntax_config and syntax_config.get("enabled")),
+            theme_light=(
+                syntax_config.get("theme_light", "friendly")
+                if syntax_config
+                else "friendly"
+            ),
+            theme_dark=(
+                syntax_config.get("theme_dark", "monokai")
+                if syntax_config
+                else "monokai"
+            ),
+            toc_enabled=bool(toc_config and toc_config.get("enabled")),
+            toc_max_depth=toc_config.get("max_depth", 3) if toc_config else 3,
+        )
+
+    def _partition_cached_items(
+        self, items: list[tuple[str, str]], config_key: str
+    ) -> tuple[dict[int, MarkdownContent], list[PendingParseItem]]:
+        results: dict[int, MarkdownContent] = {}
+        pending_items: list[PendingParseItem] = []
+        for index, (filename, raw) in enumerate(items):
+            cached_content = self._get_cached_content(filename, raw, config_key)
+            if cached_content is not None:
+                results[index] = cached_content
+                continue
+            pending_items.append(
+                PendingParseItem(index=index, filename=filename, raw=raw)
+            )
+        return results, pending_items
+
+    def _worker_items(
+        self, pending_items: list[PendingParseItem]
+    ) -> list[tuple[str, str]]:
+        return [(item.filename, item.raw) for item in pending_items]
+
+    def _parse_pending_items(
+        self,
+        workers: int,
+        parallel_config: ParallelParseConfig,
+        pending_items: list[PendingParseItem],
+    ) -> Iterator[MarkdownContent]:
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_init_worker,
+            initargs=(
+                parallel_config.syntax_enabled,
+                parallel_config.theme_light,
+                parallel_config.theme_dark,
+                parallel_config.toc_enabled,
+                parallel_config.toc_max_depth,
+            ),
+        ) as executor:
+            yield from executor.map(
+                _parse_file_worker,
+                self._worker_items(pending_items),
+                chunksize=64,
+            )
+
+    def _store_parsed_results(
+        self,
+        results: dict[int, MarkdownContent],
+        pending_items: list[PendingParseItem],
+        parsed_contents: Iterator[MarkdownContent],
+        config_key: str,
+    ) -> None:
+        for pending_item, content in zip(pending_items, parsed_contents):
+            results[pending_item.index] = content
+            self._cache_content(content.filename, pending_item.raw, config_key, content)
+
+    def _build_collection_from_results(
+        self, item_count: int, results: dict[int, MarkdownContent]
+    ) -> MarkdownCollection:
+        collection = MarkdownCollection()
+        for index in range(item_count):
+            collection.add(results[index])
+        return collection
+
+    def _parse_sequential(self, config_key: str) -> MarkdownCollection:
         collection = MarkdownCollection()
         for filename, raw in self._read_files():
-            collection.add(
-                MarkdownContent.from_raw(
-                    filename,
-                    raw,
-                    render_markdown=self.render_markdown,
-                    toc_generator=self.toc_generator,
-                )
+            cached_content = self._get_cached_content(filename, raw, config_key)
+            if cached_content is not None:
+                collection.add(cached_content)
+                continue
+            content = MarkdownContent.from_raw(
+                filename,
+                raw,
+                render_markdown=self.render_markdown,
+                toc_generator=self.toc_generator,
             )
+            self._cache_content(filename, raw, config_key, content)
+            collection.add(content)
         return collection
 
     def _parse_parallel(
         self,
         workers: int,
+        config_key: str,
         syntax_config: dict[str, Any] | None,
         toc_config: dict[str, Any] | None,
     ) -> MarkdownCollection:
         items = self._read_files()
-
-        syntax_enabled = bool(syntax_config and syntax_config.get("enabled"))
-        theme_light = (
-            syntax_config.get("theme_light", "friendly")
-            if syntax_config
-            else "friendly"
-        )
-        theme_dark = (
-            syntax_config.get("theme_dark", "monokai") if syntax_config else "monokai"
-        )
-        toc_enabled = bool(toc_config and toc_config.get("enabled"))
-        toc_max_depth = toc_config.get("max_depth", 3) if toc_config else 3
-
-        collection = MarkdownCollection()
-        with ProcessPoolExecutor(
-            max_workers=workers,
-            initializer=_init_worker,
-            initargs=(
-                syntax_enabled,
-                theme_light,
-                theme_dark,
-                toc_enabled,
-                toc_max_depth,
-            ),
-        ) as executor:
-            for content in executor.map(_parse_file_worker, items, chunksize=64):
-                collection.add(content)
-        return collection
+        parallel_config = self._build_parallel_config(syntax_config, toc_config)
+        results, pending_items = self._partition_cached_items(items, config_key)
+        if pending_items:
+            parsed_contents = self._parse_pending_items(
+                workers,
+                parallel_config,
+                pending_items,
+            )
+            self._store_parsed_results(
+                results,
+                pending_items,
+                parsed_contents,
+                config_key,
+            )
+        return self._build_collection_from_results(len(items), results)
