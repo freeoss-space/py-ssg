@@ -95,6 +95,7 @@ class RecordingBuildCommand(BuildCommand):
         self,
         paths: BuildPaths,
         config: SiteConfig,
+        cache,
         render_markdown,
         toc_generator,
     ) -> tuple[MarkdownCollection, float]:
@@ -338,10 +339,12 @@ def test_parse_markdown_configures_parser_and_returns_timing(
         toc=TocConfig(enabled=True, max_depth=2),
     )
     command = BuildCommand()
+    cache = MagicMock()
 
     parsed_collection, parsing_time = command._parse_markdown(
         paths=paths,
         config=config,
+        cache=cache,
         render_markdown=None,
         toc_generator=None,
     )
@@ -351,6 +354,7 @@ def test_parse_markdown_configures_parser_and_returns_timing(
     mock_info.assert_called_once_with("Parsing markdown files...")
     mock_parser_cls.assert_called_once_with(
         content_dir=Path("/project/content"),
+        cache=cache,
         render_markdown=None,
         toc_generator=None,
     )
