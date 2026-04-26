@@ -1,6 +1,4 @@
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import mock_open, patch
 
 from pyssg.modules.markdown import (
     ContentAuthor,
@@ -9,8 +7,6 @@ from pyssg.modules.markdown import (
     MarkdownParser,
     TocGenerator,
 )
-
-TEST_PATH = "pyssg.modules.markdown"
 
 
 class TestContentAuthor:
@@ -157,15 +153,10 @@ class TestCustomRenderer:
 
         assert "<strong>bold</strong>" in content.html
 
-    @patch(f"{TEST_PATH}.open", mock_open(read_data="# Hello"))
-    @patch(f"{TEST_PATH}.os")
-    def test_parser_passes_render_markdown_to_from_raw(self, mock_os):
+    def test_parser_passes_render_markdown_to_from_raw(self, tmp_path):
         custom_render = lambda text: "<custom>rendered</custom>"
-        mock_os.listdir.return_value = ["post.md"]
-        mock_os.path.join.return_value = "/fake/content/post.md"
-        parser = MarkdownParser(
-            content_dir=Path("/fake/content"), render_markdown=custom_render
-        )
+        (tmp_path / "post.md").write_text("# Hello")
+        parser = MarkdownParser(content_dir=tmp_path, render_markdown=custom_render)
 
         result = parser.parse()
 
@@ -173,22 +164,19 @@ class TestCustomRenderer:
 
 
 class TestParse:
-    @patch(f"{TEST_PATH}.os")
-    def test_returns_empty_collection_when_no_markdown_files(self, mock_os):
-        mock_os.listdir.return_value = ["image.png", "notes.txt"]
-        parser = MarkdownParser(content_dir=Path("/fake/content"))
+    def test_returns_empty_collection_when_no_markdown_files(self, tmp_path):
+        (tmp_path / "image.png").write_text("png")
+        (tmp_path / "notes.txt").write_text("notes")
+        parser = MarkdownParser(content_dir=tmp_path)
 
         result = parser.parse()
 
         assert isinstance(result, MarkdownCollection)
         assert len(result) == 0
 
-    @patch(f"{TEST_PATH}.open", mock_open(read_data="# Hello\n\nWorld"))
-    @patch(f"{TEST_PATH}.os")
-    def test_parses_single_markdown_file(self, mock_os):
-        mock_os.listdir.return_value = ["post.md"]
-        mock_os.path.join.return_value = "/fake/content/post.md"
-        parser = MarkdownParser(content_dir=Path("/fake/content"))
+    def test_parses_single_markdown_file(self, tmp_path):
+        (tmp_path / "post.md").write_text("# Hello\n\nWorld")
+        parser = MarkdownParser(content_dir=tmp_path)
 
         result = parser.parse()
 
@@ -196,12 +184,11 @@ class TestParse:
         assert isinstance(result["post.md"], MarkdownContent)
         assert "<h1>Hello</h1>" in result["post.md"].html
 
-    @patch(f"{TEST_PATH}.open", mock_open(read_data="**bold**"))
-    @patch(f"{TEST_PATH}.os")
-    def test_parses_multiple_markdown_files(self, mock_os):
-        mock_os.listdir.return_value = ["a.md", "b.md", "skip.txt"]
-        mock_os.path.join.side_effect = lambda d, f: f"/fake/content/{f}"
-        parser = MarkdownParser(content_dir=Path("/fake/content"))
+    def test_parses_multiple_markdown_files(self, tmp_path):
+        (tmp_path / "a.md").write_text("**bold**")
+        (tmp_path / "b.md").write_text("**bold**")
+        (tmp_path / "skip.txt").write_text("skip")
+        parser = MarkdownParser(content_dir=tmp_path)
 
         result = parser.parse()
 
@@ -210,10 +197,25 @@ class TestParse:
         assert "b.md" in result
         assert "skip.txt" not in result
 
+    def test_parses_markdown_files_recursively_with_relative_filenames(self, tmp_path):
+        (tmp_path / "blog" / "2025").mkdir(parents=True)
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "blog" / "2025" / "post.md").write_text("# Blog")
+        (tmp_path / "docs" / "api.md").write_text("# API")
+
+        parser = MarkdownParser(content_dir=tmp_path)
+
+        result = parser.parse()
+
+        assert len(result) == 2
+        assert "blog/2025/post.md" in result
+        assert "docs/api.md" in result
+        assert result["blog/2025/post.md"].filename == "blog/2025/post.md"
+        assert result["docs/api.md"].filename == "docs/api.md"
+
 
 class TestParseFrontmatter:
-    @patch(f"{TEST_PATH}.os")
-    def test_parses_frontmatter_fields(self, mock_os):
+    def test_parses_frontmatter_fields(self, tmp_path):
         md_content = """---
 title: My Post
 timestamp: "2025-01-15"
@@ -228,12 +230,10 @@ author_url: https://example.com
 
 # Hello World
 """
-        mock_os.listdir.return_value = ["post.md"]
-        mock_os.path.join.return_value = "/fake/content/post.md"
-        parser = MarkdownParser(content_dir=Path("/fake/content"))
+        (tmp_path / "post.md").write_text(md_content)
+        parser = MarkdownParser(content_dir=tmp_path)
 
-        with patch(f"{TEST_PATH}.open", mock_open(read_data=md_content)):
-            result = parser.parse()
+        result = parser.parse()
 
         post = result["post.md"]
         assert post.title == "My Post"
@@ -245,8 +245,7 @@ author_url: https://example.com
         assert post.author.url == "https://example.com"
         assert "<h1>Hello World</h1>" in post.html
 
-    @patch(f"{TEST_PATH}.os")
-    def test_parses_custom_fields(self, mock_os):
+    def test_parses_custom_fields(self, tmp_path):
         md_content = """---
 title: My Post
 slug: my-post
@@ -255,24 +254,19 @@ draft: true
 
 Content here.
 """
-        mock_os.listdir.return_value = ["post.md"]
-        mock_os.path.join.return_value = "/fake/content/post.md"
-        parser = MarkdownParser(content_dir=Path("/fake/content"))
+        (tmp_path / "post.md").write_text(md_content)
+        parser = MarkdownParser(content_dir=tmp_path)
 
-        with patch(f"{TEST_PATH}.open", mock_open(read_data=md_content)):
-            result = parser.parse()
+        result = parser.parse()
 
         post = result["post.md"]
         assert post.title == "My Post"
         assert post.custom_fields.slug == "my-post"
         assert post.custom_fields.draft is True
 
-    @patch(f"{TEST_PATH}.open", mock_open(read_data="Just plain markdown"))
-    @patch(f"{TEST_PATH}.os")
-    def test_no_frontmatter_returns_defaults(self, mock_os):
-        mock_os.listdir.return_value = ["post.md"]
-        mock_os.path.join.return_value = "/fake/content/post.md"
-        parser = MarkdownParser(content_dir=Path("/fake/content"))
+    def test_no_frontmatter_returns_defaults(self, tmp_path):
+        (tmp_path / "post.md").write_text("Just plain markdown")
+        parser = MarkdownParser(content_dir=tmp_path)
 
         result = parser.parse()
 
@@ -372,24 +366,18 @@ class TestMarkdownContentToc:
 
 
 class TestMarkdownParserToc:
-    @patch(f"{TEST_PATH}.open", mock_open(read_data="## Hello\n\nWorld"))
-    @patch(f"{TEST_PATH}.os")
-    def test_parser_passes_toc_generator(self, mock_os):
-        mock_os.listdir.return_value = ["post.md"]
-        mock_os.path.join.return_value = "/fake/content/post.md"
+    def test_parser_passes_toc_generator(self, tmp_path):
+        (tmp_path / "post.md").write_text("## Hello\n\nWorld")
         gen = TocGenerator(max_depth=3)
-        parser = MarkdownParser(content_dir=Path("/fake/content"), toc_generator=gen)
+        parser = MarkdownParser(content_dir=tmp_path, toc_generator=gen)
 
         result = parser.parse()
 
         assert "Hello" in result["post.md"].toc
 
-    @patch(f"{TEST_PATH}.open", mock_open(read_data="## Hello\n\nWorld"))
-    @patch(f"{TEST_PATH}.os")
-    def test_parser_no_toc_by_default(self, mock_os):
-        mock_os.listdir.return_value = ["post.md"]
-        mock_os.path.join.return_value = "/fake/content/post.md"
-        parser = MarkdownParser(content_dir=Path("/fake/content"))
+    def test_parser_no_toc_by_default(self, tmp_path):
+        (tmp_path / "post.md").write_text("## Hello\n\nWorld")
+        parser = MarkdownParser(content_dir=tmp_path)
 
         result = parser.parse()
 
