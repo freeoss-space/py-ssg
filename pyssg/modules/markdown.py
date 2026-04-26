@@ -1,4 +1,3 @@
-import os
 import re
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
@@ -192,13 +191,11 @@ class MarkdownParser:
 
     def _read_files(self) -> list[tuple[str, str]]:
         items = []
-        for filename in os.listdir(self.content_dir):
-            if not filename.endswith(".md"):
-                continue
-            filepath = os.path.join(self.content_dir, filename)
-            with open(filepath) as f:
+        for filepath in sorted(self.content_dir.rglob("*.md")):
+            relpath = filepath.relative_to(self.content_dir)
+            with filepath.open() as f:
                 raw = f.read()
-            items.append((filename, raw))
+            items.append((relpath.as_posix(), raw))
         return items
 
     def parse(

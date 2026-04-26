@@ -219,7 +219,7 @@ Each markdown file becomes a `MarkdownContent` object available in templates:
 
 | Property | Description |
 |----------|-------------|
-| `post.filename` | Original filename (e.g., `hello-world.md`) |
+| `post.filename` | Path relative to `content/` (e.g., `hello-world.md` or `blog/2025/hello-world.md`) |
 | `post.html` | Rendered HTML content |
 | `post.title` | Title from frontmatter |
 | `post.timestamp` | Timestamp string from frontmatter |
