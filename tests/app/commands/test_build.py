@@ -709,6 +709,46 @@ def test_render_content_pages_generates_pages_from_content_templates(
     ) == "<article>Hello World</article>"
 
 
+@patch.object(BuildCommand, "_warning")
+def test_render_content_pages_warns_when_content_template_is_not_render_only(
+    mock_warning: MagicMock, tmp_path: Path
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "post.html").write_text(
+        "<article>{{ post.title }}</article>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post = MarkdownContent(
+        filename="blog/hello-world.md",
+        html="<p>Hello</p>",
+        title="Hello World",
+        custom_fields=SimpleNamespace(template="blog/post.html"),
+    )
+    engine = MagicMock()
+    engine.render.return_value = "<article>Hello World</article>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    command._render_content_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(post),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    mock_warning.assert_called_once_with(
+        "Content template blog/post.html is not render-only and will also be "
+        "rendered as a standalone page. Rename it to blog/post.tmpl.html if "
+        "it should only be used through frontmatter."
+    )
+
+
 def test_render_template_files_passes_immutable_sorted_content(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     templates_dir.mkdir()

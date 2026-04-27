@@ -256,6 +256,7 @@ Templates are Jinja2 HTML files in the `templates/` directory.
 - Standard page templates such as `index.html` and `about.html` are rendered and written to `output/` with the same filename.
 - Render-only templates ending in `*.tmpl.html` are available as template source files, but are never copied to or rendered directly into `output/`.
 - The `*.tmpl.html` rule also applies inside nested directories under `templates/`.
+- If a frontmatter `template` points at a normal `.html` file instead of `*.tmpl.html`, py-ssg warns because that file will also render as its own standalone page.
 
 ### Template Context
 

@@ -386,6 +386,7 @@ class BuildCommand(BaseCommand):
         cached_files = 0
         sorted_content = self._sort_content(collection, content_sort)
         tag_map = self._build_tag_map(sorted_content)
+        self._warn_for_non_render_only_content_templates(sorted_content)
 
         for post in sorted_content:
             template_name = _content_template_name(post)
@@ -410,6 +411,26 @@ class BuildCommand(BaseCommand):
                 built_files += 1
 
         return total_files, built_files, cached_files
+
+    def _warn_for_non_render_only_content_templates(
+        self, sorted_content: list[MarkdownContent]
+    ) -> None:
+        warned_templates: set[str] = set()
+        for post in sorted_content:
+            template_name = _content_template_name(post)
+            if template_name is None:
+                continue
+            if _is_render_only_template(template_name):
+                continue
+            if template_name in warned_templates:
+                continue
+            warned_templates.add(template_name)
+            self._warning(
+                f"Content template {template_name} is not render-only and will "
+                "also be rendered as a standalone page. Rename it to "
+                f"{template_name.removesuffix('.html')}.tmpl.html if it should "
+                "only be used through frontmatter."
+            )
 
     def _render_content_page(
         self,
