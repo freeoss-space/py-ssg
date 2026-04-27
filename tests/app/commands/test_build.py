@@ -639,7 +639,10 @@ def test_render_template_files_renders_nested_html_templates(tmp_path: Path) -> 
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     engine = MagicMock()
-    engine.render.side_effect = ["<h1>Rendered blog</h1>", "<article>Rendered post</article>"]
+    engine.render.side_effect = [
+        "<h1>Rendered blog</h1>",
+        "<article>Rendered post</article>",
+    ]
     cache = MagicMock()
     cache.has_dynamic_constructs.return_value = False
     cache.needs_rebuild.return_value = True

@@ -22,10 +22,7 @@ def test_execute_creates_new_content_file_in_sub_folder(
     created = tmp_path / "content" / "blog" / "post_title.md"
     assert created.is_file()
     assert created.read_text(encoding="utf-8") == (
-        "---\n"
-        'title: "Post Title"\n'
-        'timestamp: "2025-01-15"\n'
-        "---\n\n"
+        '---\ntitle: "Post Title"\ntimestamp: "2025-01-15"\n---\n\n'
     )
 
 

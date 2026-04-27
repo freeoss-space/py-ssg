@@ -225,7 +225,9 @@ class TestRenderTemplate:
     def test_builtin_excerpt_filter(self):
         engine = self._make_engine()
 
-        result = engine.render("{{ '<p>Hello <strong>world</strong> again</p>'|excerpt(11) }}")
+        result = engine.render(
+            "{{ '<p>Hello <strong>world</strong> again</p>'|excerpt(11) }}"
+        )
 
         assert result == "Hello wo..."
 

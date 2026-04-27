@@ -56,7 +56,7 @@ class TestFindComponentTags:
         }
 
     def test_preserves_html_rich_attribute_values(self):
-        html = '<Alert message="<a href=\'/\'>Home</a>" />'
+        html = "<Alert message=\"<a href='/'>Home</a>\" />"
         matches = find_component_tags(html, {"Alert"})
 
         assert matches[0].attrs == {"message": "<a href='/'>Home</a>"}

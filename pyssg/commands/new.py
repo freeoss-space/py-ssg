@@ -45,12 +45,7 @@ class NewCommand(BaseCommand):
 
     def _file_contents(self) -> str:
         timestamp = datetime.now().date().isoformat()
-        return (
-            "---\n"
-            f'title: "{self.title}"\n'
-            f'timestamp: "{timestamp}"\n'
-            "---\n\n"
-        )
+        return f'---\ntitle: "{self.title}"\ntimestamp: "{timestamp}"\n---\n\n'
 
     def execute(self) -> None:
         project_dir = Path.cwd()

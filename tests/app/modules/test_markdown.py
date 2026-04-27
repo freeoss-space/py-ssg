@@ -211,7 +211,9 @@ class TestMarkdownContent:
         json.dumps(data)
 
     def test_url_uses_nested_content_path(self):
-        content = MarkdownContent(filename="blog/2025/hello-world.md", html="<p>Hello</p>")
+        content = MarkdownContent(
+            filename="blog/2025/hello-world.md", html="<p>Hello</p>"
+        )
 
         assert content.url == "/blog/2025/hello-world/"
 

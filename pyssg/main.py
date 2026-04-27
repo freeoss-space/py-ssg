@@ -62,7 +62,9 @@ def serve(
 @app.command()
 def new(
     title: str = typer.Argument(),
-    sub_folder: str | None = typer.Option(default=None, help="Optional content sub-folder."),
+    sub_folder: str | None = typer.Option(
+        default=None, help="Optional content sub-folder."
+    ),
     verbose: bool = typer.Option(default=False, help="Show additional details."),
     dry_run: bool = typer.Option(
         default=False, help="Preview changes without writing files."
