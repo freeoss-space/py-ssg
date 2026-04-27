@@ -203,9 +203,9 @@ class HtmlTemplateEngine:
             result = jinja_template.render(**render_context)
         else:
             result = template
-        return self._render_components(result)
+        return self._render_components(result, render_context)
 
-    def _render_components(self, html: str) -> str:
+    def _render_components(self, html: str, context: dict[str, Any]) -> str:
         if not self.component_names or self.components_dir is None:
             return html
 
@@ -216,7 +216,7 @@ class HtmlTemplateEngine:
                 break
             replacements = [
                 self._get_component(match.name).render(
-                    **match.attrs, children=match.children
+                    **context, **match.attrs, children=match.children
                 )
                 for match in matches
             ]

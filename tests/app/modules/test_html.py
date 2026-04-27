@@ -368,6 +368,24 @@ class TestComponentChildren:
         assert "<p>second</p>" in result
 
 
+class TestComponentParentContext:
+    def test_component_receives_site_and_parent_template_context(self):
+        config = SiteConfig(name="My Blog")
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["Banner"],
+            config=config,
+        )
+        template = "<Banner />"
+        banner_html = "<header>{{ site.name }} {{ section }}</header>"
+
+        with patch(f"{TEST_PATH}.open", mock_open(read_data=banner_html)):
+            result = engine.render(template, context={"section": "News"})
+
+        assert "<header>My Blog News</header>" in result
+
+
 class TestDotSyntaxComponents:
     def test_dot_syntax_resolves_to_subdirectory(self):
         engine = HtmlTemplateEngine(
