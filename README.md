@@ -100,7 +100,7 @@ my-blog/
 ├── content/            # Markdown files with YAML frontmatter
 │   ├── hello-world.md
 │   └── about.md
-├── templates/          # Jinja2 HTML templates (each .html file → output)
+├── templates/          # Jinja2 HTML templates
 │   ├── index.html
 │   └── about.html
 ├── components/         # Reusable HTML components
@@ -234,7 +234,11 @@ Each markdown file becomes a `MarkdownContent` object available in templates:
 
 ## Templates
 
-Templates are Jinja2 HTML files in the `templates/` directory. Every `.html` file in this directory is rendered and written to `output/` with the same filename.
+Templates are Jinja2 HTML files in the `templates/` directory.
+
+- Standard page templates such as `index.html` and `about.html` are rendered and written to `output/` with the same filename.
+- Render-only templates ending in `*.tmpl.html` are available as template source files, but are never copied to or rendered directly into `output/`.
+- The `*.tmpl.html` rule also applies inside nested directories under `templates/`.
 
 ### Template Context
 

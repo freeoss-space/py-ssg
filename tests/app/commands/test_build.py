@@ -395,6 +395,33 @@ def test_copy_template_directories_replaces_existing_directory(tmp_path: Path) -
     assert (output_dir / "assets" / "new.css").read_text(encoding="utf-8") == "new"
 
 
+def test_copy_template_directories_skips_render_only_template_files(
+    tmp_path: Path,
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "post.tmpl.html").write_text("<article>{{ post.html }}</article>")
+    (blog_dir / "meta.json").write_text('{"kind":"blog"}', encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    paths = BuildPaths(
+        project_dir=tmp_path,
+        templates_dir=templates_dir,
+        components_dir=tmp_path / "components",
+        output_dir=output_dir,
+    )
+    command = BuildCommand()
+
+    command._copy_template_directories(paths)
+
+    assert not (output_dir / "blog" / "post.tmpl.html").exists()
+    assert (output_dir / "blog" / "meta.json").read_text(encoding="utf-8") == (
+        '{"kind":"blog"}'
+    )
+
+
 def test_render_template_file_builds_static_template(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     templates_dir.mkdir()
@@ -543,6 +570,36 @@ def test_render_template_files_counts_only_html_files(tmp_path: Path) -> None:
 
     assert summary == (2, 2, 0)
     assert engine.render.call_count == 2
+
+
+def test_render_template_files_skips_render_only_template_files(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "index.html").write_text("<h1>Home</h1>", encoding="utf-8")
+    (templates_dir / "post.tmpl.html").write_text(
+        "<article>{{ post.html }}</article>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    engine = MagicMock()
+    engine.render.return_value = "<h1>Home</h1>"
+    cache = MagicMock()
+    cache.has_dynamic_constructs.return_value = False
+    cache.needs_rebuild.return_value = True
+    command = SilentBuildCommand()
+
+    summary = command._render_template_files(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    assert summary == (1, 1, 0)
+    assert engine.render.call_count == 1
+    assert not (output_dir / "post.tmpl.html").exists()
 
 
 def test_render_template_files_passes_immutable_sorted_content(tmp_path: Path) -> None:

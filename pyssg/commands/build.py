@@ -41,6 +41,10 @@ def _discover_components(components_dir: Path) -> list[str]:
     return names
 
 
+def _is_render_only_template(filename: str) -> bool:
+    return filename.endswith(".tmpl.html")
+
+
 class ProjectDirectory(StrEnum):
     CONTENT = "content"
     TEMPLATES = "templates"
@@ -294,7 +298,11 @@ class BuildCommand(BaseCommand):
             dest = os.path.join(paths.output_dir, entry)
             if os.path.exists(dest):
                 shutil.rmtree(dest)
-            shutil.copytree(entry_path, dest)
+            shutil.copytree(
+                entry_path,
+                dest,
+                ignore=shutil.ignore_patterns("*.tmpl.html"),
+            )
 
     def _render_template_files(
         self,
@@ -313,6 +321,8 @@ class BuildCommand(BaseCommand):
 
         for filename in os.listdir(templates_dir):
             if not filename.endswith(".html"):
+                continue
+            if _is_render_only_template(filename):
                 continue
 
             total_files += 1
