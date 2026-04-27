@@ -105,6 +105,9 @@ type TagMap = Mapping[str, Sequence[MarkdownContent]]
 
 
 class BuildCommand(BaseCommand):
+    def __init__(self, *, verbose: bool = False, dry_run: bool = False) -> None:
+        super().__init__(verbose=verbose, dry_run=dry_run)
+
     def execute(self) -> None:
         start_time = time.perf_counter()
         paths = self._build_paths()
@@ -112,6 +115,13 @@ class BuildCommand(BaseCommand):
         cache = BuildCache(cache_dir=paths.project_dir, enabled=config.cache)
         cache.load()
         build_script = BuildScript(paths.project_dir)
+        if self._dry_run:
+            self._warning(
+                "Dry run enabled: output files and build hooks will be skipped"
+            )
+        self._detail(f"Project directory: {paths.project_dir}")
+        self._detail(f"Output directory: {paths.output_dir}")
+        self._detail(f"Cache enabled: {config.cache}")
         context = BuildContext(
             config=config,
             cache=cache,
@@ -121,12 +131,14 @@ class BuildCommand(BaseCommand):
             output_dir=paths.output_dir,
         )
 
-        build_script.before_build(context)
+        if not self._dry_run:
+            build_script.before_build(context)
         highlighter = self._create_highlighter(config)
         render_markdown = highlighter.render_markdown if highlighter else None
         toc_generator = self._create_toc_generator(config)
 
-        build_script.before_markdown_parsing(context)
+        if not self._dry_run:
+            build_script.before_markdown_parsing(context)
         collection, parsing_time = self._parse_markdown(
             paths=paths,
             config=config,
@@ -135,7 +147,8 @@ class BuildCommand(BaseCommand):
         )
         context.content = collection
 
-        build_script.before_component_parsing(context)
+        if not self._dry_run:
+            build_script.before_component_parsing(context)
         render_summary = self._render_templates(
             paths=paths,
             config=config,
@@ -149,8 +162,9 @@ class BuildCommand(BaseCommand):
             collection=collection,
         )
 
-        cache.save()
-        build_script.after_build(context)
+        if not self._dry_run:
+            cache.save()
+            build_script.after_build(context)
         total_time = time.perf_counter() - start_time
         self._print_summary(
             render_summary=render_summary,
@@ -188,7 +202,7 @@ class BuildCommand(BaseCommand):
         render_markdown: Callable[[str], str] | None,
         toc_generator: TocGenerator | None,
     ) -> tuple[MarkdownCollection, float]:
-        self._info("Parsing markdown files...")
+        self._info("Parsing markdown content")
         parsing_start = time.perf_counter()
         parser = MarkdownParser(
             content_dir=paths.project_dir / ProjectDirectory.CONTENT,
@@ -217,7 +231,7 @@ class BuildCommand(BaseCommand):
         collection: MarkdownCollection,
         highlighter: SyntaxHighlighter | None,
     ) -> RenderSummary:
-        self._info("Rendering templates...")
+        self._info("Rendering templates")
         rendering_start = time.perf_counter()
         component_names = _discover_components(paths.components_dir)
         engine = HtmlTemplateEngine(
@@ -226,9 +240,16 @@ class BuildCommand(BaseCommand):
             component_names=component_names,
             config=config,
         )
-        os.makedirs(paths.output_dir, exist_ok=True)
+        self._detail(f"Discovered {len(component_names)} components")
+        if not self._dry_run:
+            os.makedirs(paths.output_dir, exist_ok=True)
 
-        self._copy_template_directories(paths)
+        if self._dry_run:
+            self._detail(
+                f"Dry run: would copy template directories into {paths.output_dir}"
+            )
+        else:
+            self._copy_template_directories(paths)
         total_files, built_files, cached_files = self._render_template_files(
             templates_dir=paths.templates_dir,
             output_dir=paths.output_dir,
@@ -237,10 +258,20 @@ class BuildCommand(BaseCommand):
             cache=cache,
             content_sort=config.content_sort,
         )
-        self._write_syntax_stylesheet(
-            output_dir=paths.output_dir, highlighter=highlighter
-        )
-        self._copy_static_assets(paths=paths, config=config)
+        if self._dry_run:
+            if highlighter:
+                self._detail(
+                    f"Dry run: would write syntax stylesheet to {paths.output_dir / 'syntax.css'}"
+                )
+            if os.path.isdir(paths.project_dir / config.static_dir):
+                self._detail(
+                    f"Dry run: would copy static assets from {paths.project_dir / config.static_dir}"
+                )
+        else:
+            self._write_syntax_stylesheet(
+                output_dir=paths.output_dir, highlighter=highlighter
+            )
+            self._copy_static_assets(paths=paths, config=config)
 
         return RenderSummary(
             total_files=total_files,
@@ -318,6 +349,9 @@ class BuildCommand(BaseCommand):
             template,
             context={"content": tuple(sorted_content), "tags": tag_map},
         )
+        if self._dry_run:
+            self._detail(f"Dry run: would render {filename}")
+            return TemplateRenderResult(built=True, cached=False)
         output_path = os.path.join(output_dir, filename)
         with open(output_path, "w") as f:
             f.write(rendered)
@@ -367,7 +401,7 @@ class BuildCommand(BaseCommand):
             output_mode=config.static_dir_output,
         )
         if static_output:
-            self._info(f"Copied static assets -> {static_output}")
+            self._info(f"Copied static assets to {static_output}")
 
     def _generate_feeds(
         self,
@@ -378,10 +412,14 @@ class BuildCommand(BaseCommand):
         if not config.feeds:
             return 0
 
-        self._info("Generating RSS feeds...")
+        self._info("Generating RSS feeds")
         generator = RssFeedGenerator(config=config)
         feed_count = 0
         for output_name, xml in generator.generate(collection):
+            if self._dry_run:
+                self._detail(f"Dry run: would write feed {output_name}")
+                feed_count += 1
+                continue
             output_path = os.path.join(output_dir, output_name)
             with open(output_path, "w") as f:
                 f.write(xml)
@@ -395,12 +433,18 @@ class BuildCommand(BaseCommand):
         parsing_time: float,
         total_time: float,
     ) -> None:
-        self._success("Build complete!")
-        self._success(f"Total files: {render_summary.total_files}")
-        self._success(f"Total components: {len(render_summary.component_names)}")
-        self._success(f"Built: {render_summary.built_files}")
-        self._success(f"Cached: {render_summary.cached_files}")
-        self._success(f"RSS feeds: {feed_count}")
-        self._success(f"Parsing time: {parsing_time:.3f}s")
-        self._success(f"Rendering time: {render_summary.rendering_time:.3f}s")
-        self._success(f"Total time: {total_time:.3f}s")
+        summary_label = "Dry run complete" if self._dry_run else "Build complete"
+        self._success(
+            f"{summary_label}: "
+            f"{render_summary.total_files} templates, "
+            f"{render_summary.built_files} built, "
+            f"{render_summary.cached_files} cached, "
+            f"{len(render_summary.component_names)} components, "
+            f"{feed_count} RSS feeds"
+        )
+        self._info(
+            "Timings: "
+            f"parse {parsing_time:.3f}s, "
+            f"render {render_summary.rendering_time:.3f}s, "
+            f"total {total_time:.3f}s"
+        )

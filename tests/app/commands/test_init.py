@@ -35,6 +35,24 @@ class TestCreateFolder:
         mock_warning.assert_called_once_with("Folder already exists: test_folder")
         mock_os.mkdir.assert_not_called()
 
+    @patch(f"{TEST_PATH}.Path")
+    @patch(f"{TEST_PATH}.os")
+    def test_dry_run_reports_folder_creation_without_creating(
+        self, mock_os, mock_path, tmp_path
+    ):
+        mock_path.cwd.return_value = tmp_path
+        command = InitCommand(folder_name="test_folder", dry_run=True)
+        mock_os.path.exists.return_value = False
+
+        with patch.object(command, "_info") as mock_info:
+            result = command._create_folder()
+
+        assert result is True
+        mock_info.assert_called_once_with(
+            f"Dry run: would create folder {tmp_path / 'test_folder'}"
+        )
+        mock_os.mkdir.assert_not_called()
+
 
 class TestInitStructure:
     @patch(f"{TEST_PATH}.BuildCache")
@@ -90,6 +108,31 @@ class TestInitStructure:
 
         mock_error.assert_called_once_with("Configuration files already exist!")
         mock_os.mkdir.assert_not_called()
+
+    @patch(f"{TEST_PATH}.BuildCache")
+    @patch(f"{TEST_PATH}.shutil")
+    @patch(f"{TEST_PATH}.os")
+    def test_dry_run_reports_actions_without_creating_files(
+        self, mock_os, mock_shutil, mock_cache_cls, tmp_path
+    ):
+        command = InitCommand(folder_name=".", dry_run=True, verbose=True)
+        mock_os.path.isfile.return_value = False
+
+        with (
+            patch.object(command, "_info") as mock_info,
+            patch.object(command, "_success") as mock_success,
+        ):
+            command._init_structure(folder=tmp_path)
+
+        mock_os.mkdir.assert_not_called()
+        mock_shutil.copy2.assert_not_called()
+        mock_cache_cls.create.assert_not_called()
+        mock_info.assert_any_call(
+            f"Dry run: would create project structure in {tmp_path}"
+        )
+        mock_success.assert_called_once_with(
+            f"Dry run complete: would initialize structure in {tmp_path}"
+        )
 
 
 class TestExecute:

@@ -1,6 +1,6 @@
 from pathlib import Path
 from types import MappingProxyType
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from pyssg.commands.build import (
     BuildCommand,
@@ -348,7 +348,7 @@ def test_parse_markdown_configures_parser_and_returns_timing(
 
     assert parsed_collection is collection
     assert parsing_time >= 0
-    mock_info.assert_called_once_with("Parsing markdown files...")
+    mock_info.assert_called_once_with("Parsing markdown content")
     mock_parser_cls.assert_called_once_with(
         content_dir=Path("/project/content"),
         render_markdown=None,
@@ -485,6 +485,34 @@ def test_render_template_file_does_not_update_cache_for_dynamic_templates(
     cache.update.assert_not_called()
 
 
+def test_render_template_file_dry_run_does_not_write_output(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "index.html").write_text("<h1>Template</h1>", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    engine = MagicMock()
+    engine.render.return_value = "<h1>Rendered</h1>"
+    cache = MagicMock()
+    cache.has_dynamic_constructs.return_value = False
+    cache.needs_rebuild.return_value = True
+    command = BuildCommand(dry_run=True)
+
+    result = command._render_template_file(
+        filename="index.html",
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        sorted_content=[],
+        tag_map={},
+        cache=cache,
+    )
+
+    assert result == TemplateRenderResult(built=True, cached=False)
+    cache.update.assert_not_called()
+    assert not (output_dir / "index.html").exists()
+
+
 def test_render_template_files_counts_only_html_files(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     templates_dir.mkdir()
@@ -619,7 +647,7 @@ def test_copy_static_assets_reports_destination(
 
     command._copy_static_assets(paths, _default_config())
 
-    mock_info.assert_called_once_with("Copied static assets -> output/static/")
+    mock_info.assert_called_once_with("Copied static assets to output/static/")
     assert (output_dir / "static" / "site.css").exists()
 
 
@@ -648,7 +676,7 @@ def test_generate_feeds_writes_each_feed_and_returns_count(
     )
 
     assert feed_count == 2
-    mock_info.assert_called_once_with("Generating RSS feeds...")
+    mock_info.assert_called_once_with("Generating RSS feeds")
     mock_generator_cls.assert_called_once_with(config=config)
     assert (output_dir / "feed.xml").read_text(encoding="utf-8") == "<rss />"
     assert (output_dir / "news.xml").read_text(encoding="utf-8") == "<rss />"
@@ -674,8 +702,40 @@ def test_generate_feeds_skips_generator_when_no_feeds_configured(
     mock_generator_cls.assert_not_called()
 
 
+@patch.object(BuildCommand, "_info")
+@patch(f"{TEST_PATH}.RssFeedGenerator")
+def test_generate_feeds_dry_run_counts_without_writing(
+    mock_generator_cls: MagicMock,
+    mock_info: MagicMock,
+    tmp_path: Path,
+) -> None:
+    config = _default_config(name="Example", url="https://example.com")
+    config.feeds = [FeedConfig(title="Main"), FeedConfig(title="News")]
+    collection = _make_collection(MarkdownContent(filename="post.md", html=""))
+    mock_generator_cls.return_value.generate.return_value = [
+        ("feed.xml", "<rss />"),
+        ("news.xml", "<rss />"),
+    ]
+    command = BuildCommand(dry_run=True)
+
+    feed_count = command._generate_feeds(
+        config=config,
+        output_dir=tmp_path,
+        collection=collection,
+    )
+
+    assert feed_count == 2
+    mock_info.assert_called_once_with("Generating RSS feeds")
+    assert not (tmp_path / "feed.xml").exists()
+    assert not (tmp_path / "news.xml").exists()
+
+
+@patch.object(BuildCommand, "_info")
 @patch.object(BuildCommand, "_success")
-def test_print_summary_reports_all_totals(mock_success: MagicMock) -> None:
+def test_print_summary_reports_compact_totals(
+    mock_success: MagicMock,
+    mock_info: MagicMock,
+) -> None:
     command = BuildCommand()
     render_summary = RenderSummary(
         total_files=3,
@@ -692,17 +752,12 @@ def test_print_summary_reports_all_totals(mock_success: MagicMock) -> None:
         total_time=0.4,
     )
 
-    assert mock_success.call_args_list == [
-        call("Build complete!"),
-        call("Total files: 3"),
-        call("Total components: 2"),
-        call("Built: 2"),
-        call("Cached: 1"),
-        call("RSS feeds: 4"),
-        call("Parsing time: 0.100s"),
-        call("Rendering time: 0.200s"),
-        call("Total time: 0.400s"),
-    ]
+    mock_success.assert_called_once_with(
+        "Build complete: 3 templates, 2 built, 1 cached, 2 components, 4 RSS feeds"
+    )
+    mock_info.assert_called_once_with(
+        "Timings: parse 0.100s, render 0.200s, total 0.400s"
+    )
 
 
 @patch(f"{TEST_PATH}.time.perf_counter")
@@ -772,3 +827,60 @@ def test_execute_orchestrates_build_steps_and_updates_context(
         "parsing_time": 0.25,
         "total_time": 2.0,
     }
+
+
+@patch(f"{TEST_PATH}.time.perf_counter")
+@patch(f"{TEST_PATH}.BuildScript")
+@patch(f"{TEST_PATH}.BuildCache")
+@patch(f"{TEST_PATH}.SiteConfig.load")
+@patch.object(BuildCommand, "_print_summary")
+@patch.object(BuildCommand, "_generate_feeds")
+@patch.object(BuildCommand, "_render_templates")
+@patch.object(BuildCommand, "_parse_markdown")
+@patch.object(BuildCommand, "_create_toc_generator")
+@patch.object(BuildCommand, "_create_highlighter")
+@patch.object(BuildCommand, "_build_paths")
+def test_execute_dry_run_skips_side_effect_hooks_and_cache_save(
+    mock_build_paths: MagicMock,
+    mock_create_highlighter: MagicMock,
+    mock_create_toc_generator: MagicMock,
+    mock_parse_markdown: MagicMock,
+    mock_render_templates: MagicMock,
+    mock_generate_feeds: MagicMock,
+    mock_print_summary: MagicMock,
+    mock_load_config: MagicMock,
+    mock_cache_cls: MagicMock,
+    mock_build_script_cls: MagicMock,
+    mock_perf_counter: MagicMock,
+) -> None:
+    paths = BuildPaths(
+        project_dir=Path("/project"),
+        templates_dir=Path("/project/templates"),
+        components_dir=Path("/project/components"),
+        output_dir=Path("/project/output"),
+    )
+    render_summary = RenderSummary(
+        total_files=1,
+        built_files=1,
+        cached_files=0,
+        component_names=[],
+        rendering_time=0.5,
+    )
+    config = _default_config(name="Example")
+    collection = _make_collection(MarkdownContent(filename="post.md", html="<p>Hi</p>"))
+    mock_build_paths.return_value = paths
+    mock_load_config.return_value = config
+    mock_parse_markdown.return_value = (collection, 0.25)
+    mock_render_templates.return_value = render_summary
+    mock_generate_feeds.return_value = 1
+    mock_perf_counter.side_effect = [10.0, 12.0]
+    command = BuildCommand(dry_run=True)
+
+    command.execute()
+
+    mock_build_script_cls.return_value.before_build.assert_not_called()
+    mock_build_script_cls.return_value.before_markdown_parsing.assert_not_called()
+    mock_build_script_cls.return_value.before_component_parsing.assert_not_called()
+    mock_build_script_cls.return_value.after_build.assert_not_called()
+    mock_cache_cls.return_value.save.assert_not_called()
+    mock_print_summary.assert_called_once()

@@ -7,8 +7,8 @@ from pyssg.commands.base_command import BaseCommand
 TEST_PATH = "pyssg.commands.base_command"
 
 TERM_LENGTH = 40
-CONTENT_WIDTH = TERM_LENGTH - 1
-TEXT_WIDTH = CONTENT_WIDTH - 4  # 2-char padding on each side
+PREFIX = "[bold blue][INFO][/bold blue] "
+TEXT_WIDTH = TERM_LENGTH - len("INFO") - 4
 
 
 class ConcreteCommand(BaseCommand):
@@ -19,20 +19,14 @@ class ConcreteCommand(BaseCommand):
 class TestPrintBlock:
     @patch(f"{TEST_PATH}.rich_print")
     @patch(f"{TEST_PATH}.shutil")
-    def test_prints_border_and_message(self, mock_shutil, mock_rich_print):
+    def test_prints_status_line(self, mock_shutil, mock_rich_print):
         mock_shutil.get_terminal_size.return_value.columns = TERM_LENGTH
         command = ConcreteCommand()
 
         command._print_block("hello", color="blue")
 
-        spaces = " " * CONTENT_WIDTH
-        padding_line = f"[bold blue]┃[/bold blue]{spaces}"
-        padded = f"  {'hello':<{TEXT_WIDTH}}  "
-        message_line = f"[bold blue]┃{padded}[/bold blue]"
         assert mock_rich_print.call_args_list == [
-            call(padding_line),
-            call(message_line),
-            call(padding_line),
+            call(f"{PREFIX}hello"),
         ]
 
     @patch(f"{TEST_PATH}.rich_print")
@@ -44,20 +38,20 @@ class TestPrintBlock:
 
         command._print_block(long_message.strip(), color="blue")
 
-        # padding + at least 2 message lines + padding
-        assert mock_rich_print.call_count >= 4
+        assert mock_rich_print.call_count >= 2
+        assert mock_rich_print.call_args_list[0].args[0].startswith(PREFIX)
+        for wrapped_line in mock_rich_print.call_args_list[1:]:
+            assert wrapped_line.args[0].startswith(" " * len(PREFIX))
 
     @patch(f"{TEST_PATH}.rich_print")
     @patch(f"{TEST_PATH}.shutil")
-    def test_empty_message_prints_blank_line(self, mock_shutil, mock_rich_print):
+    def test_empty_message_prints_label_only(self, mock_shutil, mock_rich_print):
         mock_shutil.get_terminal_size.return_value.columns = TERM_LENGTH
         command = ConcreteCommand()
 
         command._print_block("", color="blue")
 
-        padded = f"  {'':<{TEXT_WIDTH}}  "
-        message_line = f"[bold blue]┃{padded}[/bold blue]"
-        assert mock_rich_print.call_args_list[1] == call(message_line)
+        assert mock_rich_print.call_args_list == [call(PREFIX.rstrip())]
 
 
 class TestInfo:
@@ -65,6 +59,18 @@ class TestInfo:
     def test_uses_blue(self, mock_print_block):
         ConcreteCommand()._info("hello")
         mock_print_block.assert_called_once_with("hello", color="blue")
+
+
+class TestDetail:
+    @patch.object(ConcreteCommand, "_info")
+    def test_skips_info_when_verbose_disabled(self, mock_info):
+        ConcreteCommand()._detail("hello")
+        mock_info.assert_not_called()
+
+    @patch.object(ConcreteCommand, "_info")
+    def test_uses_info_when_verbose_enabled(self, mock_info):
+        ConcreteCommand(verbose=True)._detail("hello")
+        mock_info.assert_called_once_with("hello")
 
 
 class TestSuccess:
