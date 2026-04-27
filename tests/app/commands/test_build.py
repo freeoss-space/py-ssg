@@ -1,5 +1,5 @@
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from pyssg.commands.build import (
@@ -661,6 +661,52 @@ def test_render_template_files_renders_nested_html_templates(tmp_path: Path) -> 
     assert (output_dir / "blog" / "post.html").read_text(encoding="utf-8") == (
         "<article>Rendered post</article>"
     )
+
+
+def test_render_content_pages_generates_pages_from_content_templates(
+    tmp_path: Path,
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "post.tmpl.html").write_text(
+        "<article>{{ post.title }}</article>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post = MarkdownContent(
+        filename="blog/hello-world.md",
+        html="<p>Hello</p>",
+        title="Hello World",
+        custom_fields=SimpleNamespace(template="blog/post.tmpl.html"),
+    )
+    engine = MagicMock()
+    engine.render.return_value = "<article>Hello World</article>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    summary = command._render_content_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(post),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    assert summary == (1, 1, 0)
+    engine.render.assert_called_once_with(
+        "<article>{{ post.title }}</article>",
+        context={
+            "content": (post,),
+            "tags": MappingProxyType({}),
+            "post": post,
+        },
+    )
+    assert (output_dir / "blog" / "hello-world" / "index.html").read_text(
+        encoding="utf-8"
+    ) == "<article>Hello World</article>"
 
 
 def test_render_template_files_passes_immutable_sorted_content(tmp_path: Path) -> None:
