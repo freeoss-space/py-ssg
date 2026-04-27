@@ -212,8 +212,12 @@ author_url: https://example.com
 | `author_email` | string | Author email |
 | `author_avatar` | string | Author avatar URL |
 | `author_url` | string | Author website URL |
+| `slug` | string | Optional slug metadata |
+| `summary` | string | Optional short summary |
+| `subtitle` | string | Optional subtitle |
+| `draft` | boolean | Optional draft flag |
 
-**Custom fields:** Any additional YAML keys become accessible via `post.custom_fields`. For example, adding `slug: my-custom-slug` and `draft: true` to frontmatter makes them available as `post.custom_fields.slug` and `post.custom_fields.draft`.
+**Custom fields:** Any additional YAML keys beyond the built-in fields become accessible via `post.custom_fields`. For example, adding `series: python-notes` and `reading_time: 4` makes them available as `post.custom_fields.series` and `post.custom_fields.reading_time`.
 
 ### Parsed Content Object
 
@@ -225,6 +229,10 @@ Each markdown file becomes a `MarkdownContent` object available in templates:
 | `post.html` | Rendered HTML content |
 | `post.title` | Title from frontmatter |
 | `post.timestamp` | Timestamp string from frontmatter (`date` aliases to this field) |
+| `post.slug` | Built-in slug field |
+| `post.summary` | Built-in summary field |
+| `post.subtitle` | Built-in subtitle field |
+| `post.draft` | Built-in draft flag |
 | `post.tags` | List of tag strings |
 | `post.author.name` | Author name |
 | `post.author.email` | Author email |
