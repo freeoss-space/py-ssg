@@ -109,6 +109,7 @@ class SiteConfig:
     static_dir: str = "static"
     static_dir_output: str = "static"
     content_sort: str = "date_desc"
+    new_content_subfolder: str = ""
     authors: list[AuthorConfig] = field(default_factory=list)
     feeds: list[FeedConfig] = field(default_factory=list)
     cache: bool = True
@@ -145,6 +146,7 @@ class SiteConfig:
             static_dir=str(data.get("static_dir", "static")),
             static_dir_output=static_dir_output,
             content_sort=content_sort,
+            new_content_subfolder=str(data.get("new_content_subfolder", "")),
             authors=authors,
             feeds=feeds,
             cache=bool(data.get("cache", True)),

@@ -18,6 +18,7 @@ from pyssg.modules.markdown import (
     MarkdownContent,
     MarkdownParser,
     TocGenerator,
+    content_url_from_filename,
 )
 from pyssg.modules.rss import RssFeedGenerator
 from pyssg.modules.syntax import SyntaxHighlighter
@@ -39,6 +40,25 @@ def _discover_components(components_dir: Path) -> list[str]:
                 parts = [p for p in rel.replace("\\", "/").split("/") if p]
                 names.append(".".join(parts + [name]))
     return names
+
+
+def _is_render_only_template(filename: str) -> bool:
+    return filename.endswith(".tmpl.html")
+
+
+def _is_output_template(filename: str) -> bool:
+    return filename.endswith(".html") and not _is_render_only_template(filename)
+
+
+def _content_template_name(content: MarkdownContent) -> str | None:
+    template_name = getattr(content.custom_fields, "template", None)
+    if not isinstance(template_name, str) or template_name == "":
+        return None
+    return template_name
+
+
+def _content_output_filename(content: MarkdownContent) -> str:
+    return f"{content_url_from_filename(content.filename).strip('/')}/index.html"
 
 
 class ProjectDirectory(StrEnum):
@@ -263,6 +283,18 @@ class BuildCommand(BaseCommand):
             cache=cache,
             content_sort=config.content_sort,
         )
+        (
+            content_total_files,
+            content_built_files,
+            content_cached_files,
+        ) = self._render_content_pages(
+            templates_dir=paths.templates_dir,
+            output_dir=paths.output_dir,
+            engine=engine,
+            collection=collection,
+            cache=cache,
+            content_sort=config.content_sort,
+        )
         if self._dry_run:
             if highlighter:
                 self._detail(
@@ -279,9 +311,9 @@ class BuildCommand(BaseCommand):
             self._copy_static_assets(paths=paths, config=config)
 
         return RenderSummary(
-            total_files=total_files,
-            built_files=built_files,
-            cached_files=cached_files,
+            total_files=total_files + content_total_files,
+            built_files=built_files + content_built_files,
+            cached_files=cached_files + content_cached_files,
             component_names=component_names,
             rendering_time=time.perf_counter() - rendering_start,
         )
@@ -294,7 +326,18 @@ class BuildCommand(BaseCommand):
             dest = os.path.join(paths.output_dir, entry)
             if os.path.exists(dest):
                 shutil.rmtree(dest)
-            shutil.copytree(entry_path, dest)
+            shutil.copytree(
+                entry_path,
+                dest,
+                ignore=shutil.ignore_patterns("*.html"),
+            )
+
+    def _iter_template_filenames(self, templates_dir: Path) -> list[str]:
+        return sorted(
+            str(path.relative_to(templates_dir).as_posix())
+            for path in templates_dir.rglob("*.html")
+            if _is_output_template(path.name)
+        )
 
     def _render_template_files(
         self,
@@ -311,10 +354,7 @@ class BuildCommand(BaseCommand):
         sorted_content = self._sort_content(collection, content_sort)
         tag_map = self._build_tag_map(sorted_content)
 
-        for filename in os.listdir(templates_dir):
-            if not filename.endswith(".html"):
-                continue
-
+        for filename in self._iter_template_filenames(templates_dir):
             total_files += 1
             result = self._render_template_file(
                 filename=filename,
@@ -331,6 +371,101 @@ class BuildCommand(BaseCommand):
                 built_files += 1
 
         return total_files, built_files, cached_files
+
+    def _render_content_pages(
+        self,
+        templates_dir: Path,
+        output_dir: Path,
+        engine: HtmlTemplateEngine,
+        collection: MarkdownCollection,
+        cache: BuildCache,
+        content_sort: str,
+    ) -> tuple[int, int, int]:
+        total_files = 0
+        built_files = 0
+        cached_files = 0
+        sorted_content = self._sort_content(collection, content_sort)
+        tag_map = self._build_tag_map(sorted_content)
+        self._warn_for_non_render_only_content_templates(sorted_content)
+
+        for post in sorted_content:
+            template_name = _content_template_name(post)
+            if template_name is None:
+                continue
+
+            total_files += 1
+            result = self._render_content_page(
+                template_name=template_name,
+                output_filename=_content_output_filename(post),
+                templates_dir=templates_dir,
+                output_dir=output_dir,
+                engine=engine,
+                sorted_content=sorted_content,
+                tag_map=tag_map,
+                post=post,
+                cache=cache,
+            )
+            if result.cached:
+                cached_files += 1
+            if result.built:
+                built_files += 1
+
+        return total_files, built_files, cached_files
+
+    def _warn_for_non_render_only_content_templates(
+        self, sorted_content: list[MarkdownContent]
+    ) -> None:
+        warned_templates: set[str] = set()
+        for post in sorted_content:
+            template_name = _content_template_name(post)
+            if template_name is None:
+                continue
+            if _is_render_only_template(template_name):
+                continue
+            if template_name in warned_templates:
+                continue
+            warned_templates.add(template_name)
+            self._warning(
+                f"Content template {template_name} is not render-only and will "
+                "also be rendered as a standalone page. Rename it to "
+                f"{template_name.removesuffix('.html')}.tmpl.html if it should "
+                "only be used through frontmatter."
+            )
+
+    def _render_content_page(
+        self,
+        template_name: str,
+        output_filename: str,
+        templates_dir: Path,
+        output_dir: Path,
+        engine: HtmlTemplateEngine,
+        sorted_content: list[MarkdownContent],
+        tag_map: TagMap,
+        post: MarkdownContent,
+        cache: BuildCache,
+    ) -> TemplateRenderResult:
+        del cache
+        filepath = os.path.join(templates_dir, template_name)
+        with open(filepath) as f:
+            template = f.read()
+
+        rendered = engine.render(
+            template,
+            context={
+                "content": tuple(sorted_content),
+                "tags": tag_map,
+                "post": post,
+            },
+        )
+        if self._dry_run:
+            self._detail(f"Dry run: would render {output_filename}")
+            return TemplateRenderResult(built=True, cached=False)
+        output_path = os.path.join(output_dir, output_filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w") as f:
+            f.write(rendered)
+
+        return TemplateRenderResult(built=True, cached=False)
 
     def _render_template_file(
         self,
@@ -358,6 +493,7 @@ class BuildCommand(BaseCommand):
             self._detail(f"Dry run: would render {filename}")
             return TemplateRenderResult(built=True, cached=False)
         output_path = os.path.join(output_dir, filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w") as f:
             f.write(rendered)
 

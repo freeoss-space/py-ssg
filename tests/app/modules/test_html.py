@@ -189,6 +189,48 @@ class TestRenderTemplate:
         assert "<header>Site Header</header>" in result
         assert "<p>My Post</p>" in result
 
+    def test_builtin_post_url_global(self):
+        engine = self._make_engine()
+        post = MarkdownContent(filename="blog/hello-world.md", html="<p>Hello</p>")
+
+        result = engine.render("{{ post_url(post) }}", context={"post": post})
+
+        assert result == "/blog/hello-world/"
+
+    def test_builtin_is_blog_post_global(self):
+        engine = self._make_engine()
+        post = MarkdownContent(filename="blog/hello-world.md", html="<p>Hello</p>")
+
+        result = engine.render(
+            "{% if is_blog_post(post) %}yes{% else %}no{% endif %}",
+            context={"post": post},
+        )
+
+        assert result == "yes"
+
+    def test_builtin_slug_filter(self):
+        engine = self._make_engine()
+
+        result = engine.render("{{ 'Hello, World!'|slug }}")
+
+        assert result == "hello-world"
+
+    def test_builtin_date_format_filter(self):
+        engine = self._make_engine()
+
+        result = engine.render("{{ '2025-01-15T12:30:00'|date_format('%Y-%m') }}")
+
+        assert result == "2025-01"
+
+    def test_builtin_excerpt_filter(self):
+        engine = self._make_engine()
+
+        result = engine.render(
+            "{{ '<p>Hello <strong>world</strong> again</p>'|excerpt(11) }}"
+        )
+
+        assert result == "Hello wo..."
+
 
 class TestSiteConfigInTemplates:
     def test_site_name_available_in_template(self):
@@ -366,6 +408,24 @@ class TestComponentChildren:
 
         assert "<p>first</p>" in result
         assert "<p>second</p>" in result
+
+
+class TestComponentParentContext:
+    def test_component_receives_site_and_parent_template_context(self):
+        config = SiteConfig(name="My Blog")
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=["Banner"],
+            config=config,
+        )
+        template = "<Banner />"
+        banner_html = "<header>{{ site.name }} {{ section }}</header>"
+
+        with patch(f"{TEST_PATH}.open", mock_open(read_data=banner_html)):
+            result = engine.render(template, context={"section": "News"})
+
+        assert "<header>My Blog News</header>" in result
 
 
 class TestDotSyntaxComponents:

@@ -65,8 +65,13 @@ class TestMarkdownContent:
 
         assert content.filename == "test.md"
         assert content.html == "<p>Hello</p>"
+        assert content.url == "/test/"
         assert content.title == ""
         assert content.timestamp == ""
+        assert content.slug == ""
+        assert content.summary == ""
+        assert content.subtitle == ""
+        assert content.draft is False
         assert content.tags == []
         assert content.author == ContentAuthor()
 
@@ -83,6 +88,7 @@ class TestMarkdownContent:
         assert "<h1>Hello</h1>" in content.html
         assert "<p>World</p>" in content.html
         assert content.filename == "test.md"
+        assert content.url == "/test/"
 
     def test_from_raw_parses_frontmatter(self):
         raw = '---\ntitle: My Post\ntimestamp: "2025-01-15"\ntags:\n  - python\n---\n\nBody'
@@ -94,6 +100,23 @@ class TestMarkdownContent:
         assert content.tags == ["python"]
         assert "<p>Body</p>" in content.html
 
+    def test_from_raw_supports_date_as_timestamp_alias(self):
+        raw = '---\ntitle: My Post\ndate: "2025-01-15"\n---\n\nBody'
+
+        content = MarkdownContent.from_raw("post.md", raw)
+
+        assert content.timestamp == "2025-01-15"
+
+    def test_from_raw_prefers_timestamp_when_date_and_timestamp_exist(self):
+        raw = (
+            '---\ntitle: My Post\ntimestamp: "2025-01-16"\n'
+            'date: "2025-01-15"\n---\n\nBody'
+        )
+
+        content = MarkdownContent.from_raw("post.md", raw)
+
+        assert content.timestamp == "2025-01-16"
+
     def test_from_raw_parses_author(self):
         raw = "---\nauthor: Jane\nauthor_email: jane@example.com\n---\n\nHi"
 
@@ -102,14 +125,33 @@ class TestMarkdownContent:
         assert content.author.name == "Jane"
         assert content.author.email == "jane@example.com"
 
-    def test_from_raw_puts_unknown_fields_in_custom_fields(self):
-        raw = "---\ntitle: Post\nslug: my-post\ndraft: true\n---\n\nContent"
+    def test_from_raw_parses_builtin_optional_fields(self):
+        raw = (
+            "---\ntitle: Post\nslug: my-post\ndraft: true\nsubtitle: Intro\n"
+            "summary: Short summary\n---\n\nContent"
+        )
 
         content = MarkdownContent.from_raw("post.md", raw)
 
         assert content.title == "Post"
-        assert content.custom_fields.slug == "my-post"
-        assert content.custom_fields.draft is True
+        assert content.slug == "my-post"
+        assert content.draft is True
+        assert content.subtitle == "Intro"
+        assert content.summary == "Short summary"
+
+    def test_from_raw_keeps_only_unknown_fields_in_custom_fields(self):
+        raw = (
+            "---\ntitle: Post\nslug: my-post\ndraft: true\nsubtitle: Intro\n"
+            "summary: Short summary\nseries: Python Notes\n---\n\nContent"
+        )
+
+        content = MarkdownContent.from_raw("post.md", raw)
+
+        assert not hasattr(content.custom_fields, "slug")
+        assert not hasattr(content.custom_fields, "draft")
+        assert not hasattr(content.custom_fields, "subtitle")
+        assert not hasattr(content.custom_fields, "summary")
+        assert content.custom_fields.series == "Python Notes"
 
     def test_from_raw_with_no_frontmatter(self):
         content = MarkdownContent.from_raw("post.md", "Just plain markdown")
@@ -124,9 +166,13 @@ class TestMarkdownContent:
             html="<p>Hello</p>",
             title="Post",
             timestamp="2025-01-15",
+            slug="post",
+            summary="Summary",
+            subtitle="Subtitle",
+            draft=True,
             tags=["python"],
             author=ContentAuthor(name="Jane", email="jane@example.com"),
-            custom_fields=SimpleNamespace(slug="post", draft=True),
+            custom_fields=SimpleNamespace(series="notes"),
             toc="<nav>...</nav>",
         )
 
@@ -150,6 +196,10 @@ class TestMarkdownContent:
 
         data = content.to_dict()
 
+        assert data["slug"] == ""
+        assert data["summary"] == ""
+        assert data["subtitle"] == ""
+        assert data["draft"] is False
         assert data["custom_fields"] == {
             "published_on": "2025-01-15",
             "updated_at": "2025-01-15 12:30:45",
@@ -159,6 +209,13 @@ class TestMarkdownContent:
             },
         }
         json.dumps(data)
+
+    def test_url_uses_nested_content_path(self):
+        content = MarkdownContent(
+            filename="blog/2025/hello-world.md", html="<p>Hello</p>"
+        )
+
+        assert content.url == "/blog/2025/hello-world/"
 
 
 class TestMarkdownCollection:
@@ -460,6 +517,21 @@ author_url: https://example.com
         assert post.author.url == "https://example.com"
         assert "<h1>Hello World</h1>" in post.html
 
+    def test_parses_date_as_timestamp_alias(self, tmp_path):
+        md_content = """---
+title: My Post
+date: "2025-01-15"
+---
+
+# Hello World
+"""
+        (tmp_path / "post.md").write_text(md_content)
+        parser = MarkdownParser(content_dir=tmp_path)
+
+        result = parser.parse()
+
+        assert result["post.md"].timestamp == "2025-01-15"
+
     def test_parses_custom_fields(self, tmp_path):
         md_content = """---
 title: My Post
@@ -476,8 +548,8 @@ Content here.
 
         post = result["post.md"]
         assert post.title == "My Post"
-        assert post.custom_fields.slug == "my-post"
-        assert post.custom_fields.draft is True
+        assert post.slug == "my-post"
+        assert post.draft is True
 
     def test_no_frontmatter_returns_defaults(self, tmp_path):
         (tmp_path / "post.md").write_text("Just plain markdown")

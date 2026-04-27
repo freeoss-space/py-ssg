@@ -2,15 +2,41 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from xml.etree.ElementTree import ParseError, fromstring
 
 from jinja2 import BaseLoader, Environment, Template
 
 from pyssg.modules.config import SiteConfig
+from pyssg.modules.template_helpers import (
+    date_format,
+    excerpt,
+    is_blog_post,
+    post_url,
+    slug,
+)
 
 _jinja_env = Environment(loader=BaseLoader(), autoescape=False)
 
+
+def _register_template_helpers() -> None:
+    _jinja_env.filters["date_format"] = date_format
+    _jinja_env.filters["excerpt"] = excerpt
+    _jinja_env.filters["slug"] = slug
+    setattr(
+        _jinja_env,
+        "globals",
+        {
+            **_jinja_env.globals,
+            "is_blog_post": is_blog_post,
+            "post_url": post_url,
+        },
+    )
+
+
+_register_template_helpers()
+
 _TAG_TERMINATORS = frozenset(" />\n\t\r")
+_ATTR_NAME_TERMINATORS = frozenset("=>/ \n\t\r")
+_WHITESPACE = frozenset(" \n\t\r")
 
 
 @dataclass
@@ -30,17 +56,71 @@ def _build_line_offsets(html: str) -> list[int]:
     return offsets
 
 
+def _skip_chars(raw: str, index: int, chars: frozenset[str]) -> int:
+    while index < len(raw) and raw[index] in chars:
+        index += 1
+    return index
+
+
+def _read_until_chars(
+    raw: str, index: int, stop_chars: frozenset[str]
+) -> tuple[str, int]:
+    start = index
+    while index < len(raw) and raw[index] not in stop_chars:
+        index += 1
+    return raw[start:index], index
+
+
+def _read_tag_name(raw: str) -> tuple[str, int]:
+    return _read_until_chars(raw, 1, _TAG_TERMINATORS)
+
+
+def _read_attr_name(raw: str, index: int) -> tuple[str, int]:
+    return _read_until_chars(raw, index, _ATTR_NAME_TERMINATORS)
+
+
+def _read_quoted_attr_value(raw: str, index: int, quote: str) -> tuple[str, int]:
+    value, index = _read_until_chars(raw, index + 1, frozenset(quote))
+    if index < len(raw):
+        index += 1
+    return value, index
+
+
+def _read_unquoted_attr_value(raw: str, index: int) -> tuple[str, int]:
+    return _read_until_chars(raw, index, _TAG_TERMINATORS)
+
+
+def _read_attr_value(raw: str, index: int) -> tuple[str, int]:
+    if index >= len(raw) or raw[index] != "=":
+        return "", index
+
+    value_index = _skip_chars(raw, index + 1, _WHITESPACE)
+    if value_index >= len(raw):
+        return "", value_index
+    if raw[value_index] in "\"'":
+        return _read_quoted_attr_value(raw, value_index, raw[value_index])
+    return _read_unquoted_attr_value(raw, value_index)
+
+
 def _parse_raw_tag(raw: str) -> tuple[str, dict[str, str]]:
     """Return (tag_name, attrs) from a raw opening-tag string, preserving case."""
-    xml_frag = raw if raw.endswith("/>") else raw[:-1] + " />"
-    try:
-        elem = fromstring(xml_frag)
-        return elem.tag, dict(elem.attrib)
-    except ParseError:
-        name_end = 1
-        while name_end < len(raw) and raw[name_end] not in _TAG_TERMINATORS:
-            name_end += 1
-        return raw[1:name_end], {}
+    name, index = _read_tag_name(raw)
+
+    attrs: dict[str, str] = {}
+    while index < len(raw):
+        index = _skip_chars(raw, index, _WHITESPACE)
+        if index >= len(raw) or raw[index] in "/>":
+            break
+
+        attr_name, index = _read_attr_name(raw, index)
+        if attr_name == "":
+            break
+
+        index = _skip_chars(raw, index, _WHITESPACE)
+        attr_value, index = _read_attr_value(raw, index)
+        attrs[attr_name] = attr_value
+
+    return name, attrs
 
 
 class _ComponentParser(HTMLParser):
@@ -198,14 +278,11 @@ class HtmlTemplateEngine:
             render_context["site"] = self.config
         if context:
             render_context.update(context)
-        if render_context:
-            jinja_template = _jinja_env.from_string(template)
-            result = jinja_template.render(**render_context)
-        else:
-            result = template
-        return self._render_components(result)
+        jinja_template = _jinja_env.from_string(template)
+        result = jinja_template.render(**render_context)
+        return self._render_components(result, render_context)
 
-    def _render_components(self, html: str) -> str:
+    def _render_components(self, html: str, context: dict[str, Any]) -> str:
         if not self.component_names or self.components_dir is None:
             return html
 
@@ -216,7 +293,7 @@ class HtmlTemplateEngine:
                 break
             replacements = [
                 self._get_component(match.name).render(
-                    **match.attrs, children=match.children
+                    **context, **match.attrs, children=match.children
                 )
                 for match in matches
             ]

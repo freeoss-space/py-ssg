@@ -1,5 +1,5 @@
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from pyssg.commands.build import (
@@ -395,6 +395,60 @@ def test_copy_template_directories_replaces_existing_directory(tmp_path: Path) -
     assert (output_dir / "assets" / "new.css").read_text(encoding="utf-8") == "new"
 
 
+def test_copy_template_directories_skips_render_only_template_files(
+    tmp_path: Path,
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "post.tmpl.html").write_text("<article>{{ post.html }}</article>")
+    (blog_dir / "meta.json").write_text('{"kind":"blog"}', encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    paths = BuildPaths(
+        project_dir=tmp_path,
+        templates_dir=templates_dir,
+        components_dir=tmp_path / "components",
+        output_dir=output_dir,
+    )
+    command = BuildCommand()
+
+    command._copy_template_directories(paths)
+
+    assert not (output_dir / "blog" / "post.tmpl.html").exists()
+    assert (output_dir / "blog" / "meta.json").read_text(encoding="utf-8") == (
+        '{"kind":"blog"}'
+    )
+
+
+def test_copy_template_directories_skips_nested_html_page_templates(
+    tmp_path: Path,
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "index.html").write_text("<h1>Blog</h1>", encoding="utf-8")
+    (blog_dir / "meta.json").write_text('{"kind":"blog"}', encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    paths = BuildPaths(
+        project_dir=tmp_path,
+        templates_dir=templates_dir,
+        components_dir=tmp_path / "components",
+        output_dir=output_dir,
+    )
+    command = BuildCommand()
+
+    command._copy_template_directories(paths)
+
+    assert not (output_dir / "blog" / "index.html").exists()
+    assert (output_dir / "blog" / "meta.json").read_text(encoding="utf-8") == (
+        '{"kind":"blog"}'
+    )
+
+
 def test_render_template_file_builds_static_template(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     templates_dir.mkdir()
@@ -543,6 +597,159 @@ def test_render_template_files_counts_only_html_files(tmp_path: Path) -> None:
 
     assert summary == (2, 2, 0)
     assert engine.render.call_count == 2
+
+
+def test_render_template_files_skips_render_only_template_files(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "index.html").write_text("<h1>Home</h1>", encoding="utf-8")
+    (templates_dir / "post.tmpl.html").write_text(
+        "<article>{{ post.html }}</article>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    engine = MagicMock()
+    engine.render.return_value = "<h1>Home</h1>"
+    cache = MagicMock()
+    cache.has_dynamic_constructs.return_value = False
+    cache.needs_rebuild.return_value = True
+    command = SilentBuildCommand()
+
+    summary = command._render_template_files(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    assert summary == (1, 1, 0)
+    assert engine.render.call_count == 1
+    assert not (output_dir / "post.tmpl.html").exists()
+
+
+def test_render_template_files_renders_nested_html_templates(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "index.html").write_text("<h1>Blog</h1>", encoding="utf-8")
+    (blog_dir / "post.html").write_text("<article>Post</article>", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    engine = MagicMock()
+    engine.render.side_effect = [
+        "<h1>Rendered blog</h1>",
+        "<article>Rendered post</article>",
+    ]
+    cache = MagicMock()
+    cache.has_dynamic_constructs.return_value = False
+    cache.needs_rebuild.return_value = True
+    command = SilentBuildCommand()
+
+    summary = command._render_template_files(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    assert summary == (2, 2, 0)
+    assert (output_dir / "blog" / "index.html").read_text(encoding="utf-8") == (
+        "<h1>Rendered blog</h1>"
+    )
+    assert (output_dir / "blog" / "post.html").read_text(encoding="utf-8") == (
+        "<article>Rendered post</article>"
+    )
+
+
+def test_render_content_pages_generates_pages_from_content_templates(
+    tmp_path: Path,
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "post.tmpl.html").write_text(
+        "<article>{{ post.title }}</article>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post = MarkdownContent(
+        filename="blog/hello-world.md",
+        html="<p>Hello</p>",
+        title="Hello World",
+        custom_fields=SimpleNamespace(template="blog/post.tmpl.html"),
+    )
+    engine = MagicMock()
+    engine.render.return_value = "<article>Hello World</article>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    summary = command._render_content_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(post),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    assert summary == (1, 1, 0)
+    engine.render.assert_called_once_with(
+        "<article>{{ post.title }}</article>",
+        context={
+            "content": (post,),
+            "tags": MappingProxyType({}),
+            "post": post,
+        },
+    )
+    assert (output_dir / "blog" / "hello-world" / "index.html").read_text(
+        encoding="utf-8"
+    ) == "<article>Hello World</article>"
+
+
+@patch.object(BuildCommand, "_warning")
+def test_render_content_pages_warns_when_content_template_is_not_render_only(
+    mock_warning: MagicMock, tmp_path: Path
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    blog_dir = templates_dir / "blog"
+    blog_dir.mkdir()
+    (blog_dir / "post.html").write_text(
+        "<article>{{ post.title }}</article>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post = MarkdownContent(
+        filename="blog/hello-world.md",
+        html="<p>Hello</p>",
+        title="Hello World",
+        custom_fields=SimpleNamespace(template="blog/post.html"),
+    )
+    engine = MagicMock()
+    engine.render.return_value = "<article>Hello World</article>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    command._render_content_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(post),
+        cache=cache,
+        content_sort="date_desc",
+    )
+
+    mock_warning.assert_called_once_with(
+        "Content template blog/post.html is not render-only and will also be "
+        "rendered as a standalone page. Rename it to blog/post.tmpl.html if "
+        "it should only be used through frontmatter."
+    )
 
 
 def test_render_template_files_passes_immutable_sorted_content(tmp_path: Path) -> None:

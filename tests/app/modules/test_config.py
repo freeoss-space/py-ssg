@@ -110,6 +110,7 @@ class TestSiteConfig:
         assert config.static_dir == "static"
         assert config.static_dir_output == "static"
         assert config.content_sort == "date_desc"
+        assert config.new_content_subfolder == ""
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True
@@ -124,6 +125,7 @@ class TestSiteConfig:
             "static_dir": "public",
             "static_dir_output": "root",
             "content_sort": "filename",
+            "new_content_subfolder": "blog",
             "cache": False,
             "authors": [{"name": "Jane", "email": "jane@example.com"}],
             "feeds": [{"title": "Feed", "output": "feed.xml"}],
@@ -137,6 +139,7 @@ class TestSiteConfig:
         assert config.static_dir == "public"
         assert config.static_dir_output == "root"
         assert config.content_sort == "filename"
+        assert config.new_content_subfolder == "blog"
         assert config.cache is False
         assert len(config.authors) == 1
         assert config.authors[0].name == "Jane"
@@ -153,6 +156,7 @@ class TestSiteConfig:
         assert config.static_dir == "static"
         assert config.static_dir_output == "static"
         assert config.content_sort == "date_desc"
+        assert config.new_content_subfolder == ""
         assert config.authors == []
         assert config.feeds == []
         assert config.cache is True

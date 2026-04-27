@@ -38,3 +38,22 @@ def test_serve_passes_port_verbose_and_dry_run_to_command(mock_serve_cls) -> Non
     assert result.exit_code == 0
     mock_serve_cls.assert_called_once_with(port=9000, verbose=True, dry_run=True)
     mock_serve_cls.return_value.execute.assert_called_once_with()
+
+
+@patch(f"{TEST_PATH}.NewCommand")
+def test_new_passes_title_sub_folder_verbose_and_dry_run_to_command(
+    mock_new_cls,
+) -> None:
+    result = runner.invoke(
+        app,
+        ["new", "--sub-folder", "blog", "Post Title", "--verbose", "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    mock_new_cls.assert_called_once_with(
+        title="Post Title",
+        sub_folder="blog",
+        verbose=True,
+        dry_run=True,
+    )
+    mock_new_cls.return_value.execute.assert_called_once_with()

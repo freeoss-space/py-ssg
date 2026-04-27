@@ -6,6 +6,7 @@ cache = true
 static_dir = "static"
 static_dir_output = "static"
 content_sort = "date_desc"
+new_content_subfolder = ""
 
 [py-ssg.server]
 port = 8000

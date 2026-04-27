@@ -24,6 +24,18 @@ def _slugify(text: str) -> str:
     return slug
 
 
+def content_url_from_filename(filename: str) -> str:
+    route = filename.removesuffix(".md").strip("/")
+    return f"/{route}/"
+
+
+def _read_timestamp(post: Any) -> str:
+    timestamp = post.get("timestamp", "")
+    if timestamp != "":
+        return str(timestamp)
+    return str(post.get("date", ""))
+
+
 def _to_json_safe_value(value: object) -> object:
     if value is None or isinstance(value, bool | int | float | str):
         return value
@@ -125,6 +137,10 @@ class MarkdownContentData(TypedDict):
     html: str
     title: str
     timestamp: str
+    slug: str
+    summary: str
+    subtitle: str
+    draft: bool
     tags: list[str]
     author: ContentAuthorData
     custom_fields: dict[str, object]
@@ -153,10 +169,18 @@ class MarkdownContent:
     html: str
     title: str = ""
     timestamp: str = ""
+    slug: str = ""
+    summary: str = ""
+    subtitle: str = ""
+    draft: bool = False
     tags: list[str] = field(default_factory=list)
     author: ContentAuthor = field(default_factory=ContentAuthor)
     custom_fields: SimpleNamespace = field(default_factory=SimpleNamespace)
     toc: str = ""
+
+    @property
+    def url(self) -> str:
+        return content_url_from_filename(self.filename)
 
     @classmethod
     def from_raw(
@@ -185,7 +209,11 @@ class MarkdownContent:
             filename=filename,
             html=str(render(post.content)),
             title=str(post.get("title", "")),
-            timestamp=str(post.get("timestamp", "")),
+            timestamp=_read_timestamp(post),
+            slug=str(post.get("slug", "")),
+            summary=str(post.get("summary", "")),
+            subtitle=str(post.get("subtitle", "")),
+            draft=bool(post.get("draft", False)),
             tags=tags,
             author=ContentAuthor.from_post(post),
             custom_fields=custom,
@@ -198,6 +226,10 @@ class MarkdownContent:
             "html": self.html,
             "title": self.title,
             "timestamp": self.timestamp,
+            "slug": self.slug,
+            "summary": self.summary,
+            "subtitle": self.subtitle,
+            "draft": self.draft,
             "tags": list(self.tags),
             "author": self.author.to_dict(),
             "custom_fields": cast(
@@ -222,6 +254,10 @@ class MarkdownContent:
             html=str(data.get("html", "")),
             title=str(data.get("title", "")),
             timestamp=str(data.get("timestamp", "")),
+            slug=str(data.get("slug", "")),
+            summary=str(data.get("summary", "")),
+            subtitle=str(data.get("subtitle", "")),
+            draft=bool(data.get("draft", False)),
             tags=tags,
             author=ContentAuthor.from_dict(author_data),
             custom_fields=SimpleNamespace(**cast(dict[str, Any], custom_fields_data)),

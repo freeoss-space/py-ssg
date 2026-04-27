@@ -55,6 +55,12 @@ class TestFindComponentTags:
             "message": "Hello",
         }
 
+    def test_preserves_html_rich_attribute_values(self):
+        html = "<Alert message=\"<a href='/'>Home</a>\" />"
+        matches = find_component_tags(html, {"Alert"})
+
+        assert matches[0].attrs == {"message": "<a href='/'>Home</a>"}
+
     def test_skips_regular_html_tags(self):
         html = '<div class="foo" /><Navbar />'
         matches = find_component_tags(html, {"Navbar"})
