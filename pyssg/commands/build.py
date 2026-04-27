@@ -45,6 +45,10 @@ def _is_render_only_template(filename: str) -> bool:
     return filename.endswith(".tmpl.html")
 
 
+def _is_output_template(filename: str) -> bool:
+    return filename.endswith(".html") and not _is_render_only_template(filename)
+
+
 class ProjectDirectory(StrEnum):
     CONTENT = "content"
     TEMPLATES = "templates"
@@ -301,8 +305,15 @@ class BuildCommand(BaseCommand):
             shutil.copytree(
                 entry_path,
                 dest,
-                ignore=shutil.ignore_patterns("*.tmpl.html"),
+                ignore=shutil.ignore_patterns("*.html"),
             )
+
+    def _iter_template_filenames(self, templates_dir: Path) -> list[str]:
+        return sorted(
+            str(path.relative_to(templates_dir).as_posix())
+            for path in templates_dir.rglob("*.html")
+            if _is_output_template(path.name)
+        )
 
     def _render_template_files(
         self,
@@ -319,12 +330,7 @@ class BuildCommand(BaseCommand):
         sorted_content = self._sort_content(collection, content_sort)
         tag_map = self._build_tag_map(sorted_content)
 
-        for filename in os.listdir(templates_dir):
-            if not filename.endswith(".html"):
-                continue
-            if _is_render_only_template(filename):
-                continue
-
+        for filename in self._iter_template_filenames(templates_dir):
             total_files += 1
             result = self._render_template_file(
                 filename=filename,
@@ -368,6 +374,7 @@ class BuildCommand(BaseCommand):
             self._detail(f"Dry run: would render {filename}")
             return TemplateRenderResult(built=True, cached=False)
         output_path = os.path.join(output_dir, filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w") as f:
             f.write(rendered)
 
