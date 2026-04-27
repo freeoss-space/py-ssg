@@ -241,6 +241,14 @@ Each markdown file becomes a `MarkdownContent` object available in templates:
 | `post.custom_fields` | Namespace with any extra frontmatter fields |
 | `post.toc` | Generated table of contents HTML (if enabled) |
 
+### Content Routing
+
+Content routes are derived from the markdown filename relative to `content/`.
+
+- `content/post.md` becomes `post.url == "/post/"`
+- `content/blog/hello-world.md` becomes `post.url == "/blog/hello-world/"`
+- Content pages generated from frontmatter templates and RSS feed links both use this same canonical route
+
 ## Templates
 
 Templates are Jinja2 HTML files in the `templates/` directory.
@@ -441,7 +449,7 @@ output = "python.xml"
 tags = ["python"]
 ```
 
-Feed items include title, link (derived from filename slug), description (full HTML), publication date (RFC 2822), and author. Items are sorted newest-first. When `tags` is specified, only posts with at least one matching tag are included.
+Feed items include title, link (derived from `post.url`), description (full HTML), publication date (RFC 2822), and author. Items are sorted newest-first. When `tags` is specified, only posts with at least one matching tag are included.
 
 ## Build Hooks
 

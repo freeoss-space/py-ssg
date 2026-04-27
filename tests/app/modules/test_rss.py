@@ -48,7 +48,7 @@ class TestRssFeedGenerator:
         assert '<?xml version="1.0"' in xml
         assert "<title>Blog</title>" in xml
         assert "<title>Test Post</title>" in xml
-        assert "<link>https://example.com/post</link>" in xml
+        assert "<link>https://example.com/post/</link>" in xml
 
     def test_generate_multiple_feeds(self):
         feeds = [
@@ -67,10 +67,10 @@ class TestRssFeedGenerator:
         assert len(results) == 2
         all_xml = results[0][1]
         tech_xml = results[1][1]
-        assert "a</link>" in all_xml
-        assert "b</link>" in all_xml
-        assert "a</link>" in tech_xml
-        assert "b</link>" not in tech_xml
+        assert "a/</link>" in all_xml
+        assert "b/</link>" in all_xml
+        assert "a/</link>" in tech_xml
+        assert "b/</link>" not in tech_xml
 
     def test_tag_filtering(self):
         feed = FeedConfig(title="Tech", output="tech.xml", tags=["tech"])
@@ -85,9 +85,21 @@ class TestRssFeedGenerator:
         results = gen.generate(col)
         xml = results[0][1]
 
-        assert "https://example.com/a</link>" in xml
-        assert "https://example.com/c</link>" in xml
-        assert "https://example.com/b</link>" not in xml
+        assert "https://example.com/a/</link>" in xml
+        assert "https://example.com/c/</link>" in xml
+        assert "https://example.com/b/</link>" not in xml
+
+    def test_feed_links_use_same_route_as_post_url(self):
+        feed = FeedConfig(title="Blog", output="feed.xml")
+        config = _make_config(feeds=[feed])
+        gen = RssFeedGenerator(config=config)
+        col = _make_collection(_make_content(filename="blog/hello-world.md"))
+
+        results = gen.generate(col)
+        xml = results[0][1]
+
+        assert "<link>https://example.com/blog/hello-world/</link>" in xml
+        assert "<guid>https://example.com/blog/hello-world/</guid>" in xml
 
     def test_items_sorted_by_timestamp_descending(self):
         feed = FeedConfig(title="Blog", output="feed.xml")
@@ -102,9 +114,9 @@ class TestRssFeedGenerator:
         results = gen.generate(col)
         xml = results[0][1]
 
-        new_pos = xml.index("example.com/new")
-        mid_pos = xml.index("example.com/mid")
-        old_pos = xml.index("example.com/old")
+        new_pos = xml.index("example.com/new/")
+        mid_pos = xml.index("example.com/mid/")
+        old_pos = xml.index("example.com/old/")
         assert new_pos < mid_pos < old_pos
 
     def test_author_with_email(self):
@@ -158,5 +170,5 @@ class TestRssFeedGenerator:
 
         results = gen.generate(col)
         xml = results[0][1]
-        assert "https://example.com/post</link>" in xml
-        assert "example.com//post" not in xml
+        assert "https://example.com/post/</link>" in xml
+        assert "example.com//post/" not in xml

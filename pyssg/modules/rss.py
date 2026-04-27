@@ -34,9 +34,9 @@ class RssFeedGenerator:
             item = SubElement(channel, "item")
             SubElement(item, "title").text = content.title
 
-            slug = content.filename.removesuffix(".md")
-            SubElement(item, "link").text = f"{self.site_url}/{slug}"
-            SubElement(item, "guid").text = f"{self.site_url}/{slug}"
+            canonical_url = f"{self.site_url}{content.url}"
+            SubElement(item, "link").text = canonical_url
+            SubElement(item, "guid").text = canonical_url
 
             SubElement(item, "description").text = content.html
 
