@@ -93,6 +93,29 @@ py-ssg serve --port 3000  # Custom port
 
 Press `Ctrl+C` for graceful shutdown.
 
+### `py-ssg new [--sub-folder SUB_FOLDER] "Post Title"`
+
+Creates a new markdown file inside `content/` with starter frontmatter.
+
+```bash
+py-ssg new "Post Title"
+py-ssg new --sub-folder blog "Post Title"
+```
+
+Examples:
+
+- `py-ssg new "Post Title"` creates `content/post_title.md`
+- `py-ssg new --sub-folder blog "Post Title"` creates `content/blog/post_title.md`
+
+The generated file includes:
+
+```yaml
+---
+title: "Post Title"
+timestamp: "2025-01-15"
+---
+```
+
 ## Project Structure
 
 ```
@@ -136,6 +159,7 @@ cache = true                    # Enable incremental build caching
 static_dir = "static"           # Source directory for copied assets
 static_dir_output = "static"    # "static" -> output/static, "root" -> output/
 content_sort = "date_desc"      # "date_desc", "date_asc", "filename", or "none"
+new_content_subfolder = ""      # Default sub-folder for `py-ssg new`
 
 [py-ssg.server]
 port = 8000                     # Dev server port

@@ -4,6 +4,7 @@ import typer
 
 from pyssg.commands.build import BuildCommand
 from pyssg.commands.init import InitCommand
+from pyssg.commands.new import NewCommand
 from pyssg.commands.serve import ServeCommand
 
 LOGGER = logging.getLogger(__name__)
@@ -56,6 +57,24 @@ def serve(
 ) -> None:
     serve_command = ServeCommand(port=port, verbose=verbose, dry_run=dry_run)
     serve_command.execute()
+
+
+@app.command()
+def new(
+    title: str = typer.Argument(),
+    sub_folder: str | None = typer.Option(default=None, help="Optional content sub-folder."),
+    verbose: bool = typer.Option(default=False, help="Show additional details."),
+    dry_run: bool = typer.Option(
+        default=False, help="Preview changes without writing files."
+    ),
+) -> None:
+    new_command = NewCommand(
+        title=title,
+        sub_folder=sub_folder,
+        verbose=verbose,
+        dry_run=dry_run,
+    )
+    new_command.execute()
 
 
 if __name__ == "__main__":
