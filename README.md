@@ -57,7 +57,7 @@ Your site is now live at `http://localhost:8000`.
 
 ## Commands
 
-### `py-ssg init [folder_name]`
+### `py-ssg init [folder_name] [--verbose] [--dry-run]`
 
 Scaffolds a new project. If `folder_name` is omitted, initializes in the current directory.
 
@@ -72,7 +72,13 @@ my-blog/
 └── py-ssg.toml     # Configuration file
 ```
 
-### `py-ssg build`
+Notes:
+
+- If the target folder already exists, initialization stops with a warning.
+- If `py-ssg.toml` already exists in the target, initialization stops and does not overwrite the project.
+- `--dry-run` prints the planned filesystem changes without creating files or folders.
+
+### `py-ssg build [--verbose] [--dry-run]`
 
 Builds the site. Reads markdown from `content/`, renders templates from `templates/`, resolves components from `components/`, and writes the result to `output/`.
 
@@ -82,9 +88,15 @@ The build reports:
 - RSS feeds generated
 - Parsing, rendering, and total time
 
-### `py-ssg serve [--port PORT]`
+Behavior notes:
 
-Runs an initial build, starts a local HTTP server, and watches for changes. Automatically rebuilds when files in `content/`, `templates/`, or `components/` change.
+- `--dry-run` skips build hooks and does not write output files, feeds, cache updates, or copied assets.
+- Markdown parsing still runs during `--dry-run`, so you can preview what would build.
+- Static assets are copied after template rendering, so colliding static files win.
+
+### `py-ssg serve [--port PORT] [--verbose] [--dry-run]`
+
+Runs an initial build, starts a local HTTP server, and watches for changes. Automatically rebuilds when files in `content/`, `templates/`, `components/`, or the configured static directory change.
 
 ```bash
 py-ssg serve              # Default port 8000
@@ -93,7 +105,12 @@ py-ssg serve --port 3000  # Custom port
 
 Press `Ctrl+C` for graceful shutdown.
 
-### `py-ssg new [--sub-folder SUB_FOLDER] "Post Title"`
+Behavior notes:
+
+- If `--port` is omitted, py-ssg uses `py-ssg.server.port` from config.
+- `--dry-run` performs the initial build preview and prints the URL it would serve, but does not start the server or watcher.
+
+### `py-ssg new [--sub-folder SUB_FOLDER] [--verbose] [--dry-run] "Post Title"`
 
 Creates a new markdown file inside `content/` with starter frontmatter.
 
@@ -115,6 +132,14 @@ title: "Post Title"
 timestamp: "2025-01-15"
 ---
 ```
+
+Behavior notes:
+
+- Filenames are generated from the title, lowercased and normalized with underscores. For example, `"Hello World"` becomes `hello_world.md`.
+- `--sub-folder blog/2025` creates nested folders as needed under `content/`.
+- If `--sub-folder` is omitted, py-ssg uses `new_content_subfolder` from config.
+- If the target file already exists, the command stops with a warning.
+- `--dry-run` prints the target path without writing the file.
 
 ## Project Structure
 
@@ -240,6 +265,7 @@ author_url: https://example.com
 | `summary` | string | Optional short summary |
 | `subtitle` | string | Optional subtitle |
 | `draft` | boolean | Optional draft flag |
+| `template` | string | Optional content page template path, usually a `*.tmpl.html` file under `templates/` |
 
 **Custom fields:** Any additional YAML keys beyond the built-in fields become accessible via `post.custom_fields`. For example, adding `series: python-notes` and `reading_time: 4` makes them available as `post.custom_fields.series` and `post.custom_fields.reading_time`.
 
@@ -273,11 +299,42 @@ Content routes are derived from the markdown filename relative to `content/`.
 - `content/blog/hello-world.md` becomes `post.url == "/blog/hello-world/"`
 - Content pages generated from frontmatter templates and RSS feed links both use this same canonical route
 
+### Content-Generated Pages
+
+Markdown files can generate their own standalone output pages without `pyssg_build.py` by setting `template` in frontmatter:
+
+```yaml
+---
+title: Hello World
+template: blog/post.tmpl.html
+---
+```
+
+With `content/blog/hello-world.md`, py-ssg renders `templates/blog/post.tmpl.html` and writes:
+
+```text
+output/blog/hello-world/index.html
+```
+
+These content-page templates receive:
+
+- `site`
+- `content`
+- `tags`
+- `post`
+
+Quirks:
+
+- Content-page outputs always follow the canonical route from `post.url`.
+- Content-page rendering is currently not template-cached; these pages rebuild every time.
+- If `template` points to a normal `.html` page template instead of `*.tmpl.html`, py-ssg warns because that template will also render as its own standalone page.
+
 ## Templates
 
 Templates are Jinja2 HTML files in the `templates/` directory.
 
 - Standard page templates such as `index.html` and `about.html` are rendered and written to `output/` with the same filename.
+- Nested page templates such as `templates/blog/index.html` are rendered by default to matching nested output paths like `output/blog/index.html`.
 - Render-only templates ending in `*.tmpl.html` are available as template source files, but are never copied to or rendered directly into `output/`.
 - The `*.tmpl.html` rule also applies inside nested directories under `templates/`.
 - If a frontmatter `template` points at a normal `.html` file instead of `*.tmpl.html`, py-ssg warns because that file will also render as its own standalone page.
@@ -290,6 +347,7 @@ All templates receive:
 |----------|-------------|
 | `site` | Site configuration object (`site.name`, `site.url`, `site.description`, `site.authors`, `site.feeds`) |
 | `content` | List of all `MarkdownContent` objects, sorted by `site.content_sort` (default: newest `timestamp` first, undated posts last) |
+| `tags` | Mapping of tag name to tuple of matching content items |
 
 ### Built-in Helpers
 
@@ -340,6 +398,10 @@ Templates also have these built-in globals and filters:
 
 Standard Jinja2 features are fully supported: `{% for %}`, `{% if %}`, `{% macro %}`, `{{ variable }}`, filters, etc.
 
+Template note:
+
+- Jinja autoescaping is disabled. Rendered markdown and component output are inserted as plain HTML, so escaping and trust boundaries are your responsibility.
+
 ## Components
 
 Components are reusable HTML snippets stored as `.html` files in the `components/` directory. They are automatically discovered at build time.
@@ -388,6 +450,8 @@ When a component uses open/close tags, the inner HTML is available inside the co
 </div>
 ```
 
+Nested component directories are also supported. A file such as `components/blog/Card.html` is available as `<blog.Card />`.
+
 ### Component Rules
 
 - Components support self-closing syntax such as `<Name />` and open/close syntax such as `<Card>...</Card>`
@@ -395,6 +459,9 @@ When a component uses open/close tags, the inner HTML is available inside the co
 - Components can contain full Jinja2 syntax (conditionals, loops, etc.)
 - Components can nest other components, up to **10 levels deep**
 - Child content is exposed to the component template through `{{ children }}`
+- Components inherit the parent template context, including `site`, `content`, `tags`, `post`, and any other variables already in scope
+- Component attributes override parent context variables with the same name
+- Attribute values are parsed as literal strings from the rendered HTML; quoted HTML-rich values are supported
 - Unknown tags are left untouched in the output
 
 ### Example: Conditional Component
@@ -476,6 +543,11 @@ tags = ["python"]
 
 Feed items include title, link (derived from `post.url`), description (full HTML), publication date (RFC 2822), and author. Items are sorted newest-first. When `tags` is specified, only posts with at least one matching tag are included.
 
+Notes:
+
+- Feed links and template-facing URLs use the same canonical route logic.
+- If `site.url` is empty, feed links become relative-looking values rooted at `/`.
+
 ## Build Hooks
 
 Create a `pyssg_build.py` file in your project root to hook into the build pipeline. Define any of these functions:
@@ -521,13 +593,26 @@ The `context` argument (`BuildContext`) provides:
 | `context.output_dir` | `Path` | Path to `output/` |
 | `context.content` | `MarkdownCollection` | Parsed content (`None` before `before_component_parsing`) |
 
-See `pyssg_build.example.py` in the repository for a complete example.
+See [pyssg_build.example.py](/Users/lucasqueiroz/Documents/projects/freeoss-space/py-ssg/pyssg_build.example.py:1) for a complete example.
 
 ## Build Caching
 
-When `cache = true` (default), py-ssg tracks SHA256 hashes of template files and skips rendering unchanged templates. Templates containing dynamic Jinja2 constructs (`for`, `if`, `macro`, `callblock`) are always rebuilt regardless of cache state.
+When `cache = true` (default), py-ssg stores cache data in `.pyssg_cache.json`.
 
-Cache is stored in `.pyssg_cache.json` at the project root.
+What is cached:
+
+- Parsed markdown content, keyed by the raw file contents plus syntax and TOC configuration
+- Static page templates whose source text has not changed
+
+What is not cached:
+
+- Templates containing dynamic Jinja2 constructs such as `for`, `if`, `macro`, or `callblock`
+- Content-generated pages from frontmatter `template`
+
+Notes:
+
+- Disabling cache with `cache = false` turns off both template and markdown-content cache usage.
+- Cache keys are based on source content, not dependency tracking between templates and content. If a static template reads `content`, the template cache still only considers the template file itself.
 
 ## Performance
 
