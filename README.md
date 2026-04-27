@@ -288,7 +288,7 @@ Standard Jinja2 features are fully supported: `{% for %}`, `{% if %}`, `{% macro
 
 ## Components
 
-Components are reusable HTML snippets stored as `.html` files in the `components/` directory. They use a self-closing XML-like tag syntax and are automatically discovered at build time.
+Components are reusable HTML snippets stored as `.html` files in the `components/` directory. They are automatically discovered at build time.
 
 ### Creating a Component
 
@@ -304,7 +304,7 @@ Create a file in `components/` — the filename (without `.html`) becomes the ta
 
 ### Using Components
 
-Use self-closing tags in your templates. Attributes are passed as Jinja2 variables to the component:
+Components support both self-closing tags and open/close tags with child content. Attributes are passed as Jinja2 variables to the component.
 
 ```html
 <Navbar homeClass="active" aboutClass="" />
@@ -319,13 +319,28 @@ Renders to:
 </nav>
 ```
 
+When a component uses open/close tags, the inner HTML is available inside the component template as `{{ children }}`:
+
+```html
+<Card>
+  <p>Hello</p>
+</Card>
+```
+
+**`components/Card.html`**
+```html
+<div class="card">
+  {{ children }}
+</div>
+```
+
 ### Component Rules
 
-- Components **must** use self-closing syntax: `<Name />` or `<Name attr="value" />`
+- Components support self-closing syntax such as `<Name />` and open/close syntax such as `<Card>...</Card>`
 - Component filenames are **case-sensitive** and must match the tag name exactly
 - Components can contain full Jinja2 syntax (conditionals, loops, etc.)
 - Components can nest other components, up to **10 levels deep**
-- Components **do not** support child content (no open/close tags) — they are always self-closing
+- Child content is exposed to the component template through `{{ children }}`
 - Unknown tags are left untouched in the output
 
 ### Example: Conditional Component
