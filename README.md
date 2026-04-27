@@ -249,6 +249,18 @@ All templates receive:
 | `site` | Site configuration object (`site.name`, `site.url`, `site.description`, `site.authors`, `site.feeds`) |
 | `content` | List of all `MarkdownContent` objects, sorted by `site.content_sort` (default: newest `timestamp` first, undated posts last) |
 
+### Built-in Helpers
+
+Templates also have these built-in globals and filters:
+
+| Helper | Type | Description |
+|--------|------|-------------|
+| `post_url(post)` | global | Returns the canonical URL for a content item, such as `/blog/hello-world/` |
+| `is_blog_post(post)` | global | Returns `true` when the content file lives under `content/blog/` |
+| `slug` | filter | Slugifies text by lowercasing it, removing special characters, and replacing spaces with hyphens |
+| `date_format` | filter | Formats ISO date or datetime strings with `strftime` syntax, for example `{{ post.timestamp\|date_format('%Y-%m-%d') }}` |
+| `excerpt` | filter | Strips HTML, normalizes whitespace, and truncates text with `...` |
+
 ### Example Template
 
 ```html

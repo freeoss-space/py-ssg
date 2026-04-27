@@ -6,8 +6,33 @@ from typing import Any
 from jinja2 import BaseLoader, Environment, Template
 
 from pyssg.modules.config import SiteConfig
+from pyssg.modules.template_helpers import (
+    date_format,
+    excerpt,
+    is_blog_post,
+    post_url,
+    slug,
+)
 
 _jinja_env = Environment(loader=BaseLoader(), autoescape=False)
+
+
+def _register_template_helpers() -> None:
+    _jinja_env.filters["date_format"] = date_format
+    _jinja_env.filters["excerpt"] = excerpt
+    _jinja_env.filters["slug"] = slug
+    setattr(
+        _jinja_env,
+        "globals",
+        {
+            **_jinja_env.globals,
+            "is_blog_post": is_blog_post,
+            "post_url": post_url,
+        },
+    )
+
+
+_register_template_helpers()
 
 _TAG_TERMINATORS = frozenset(" />\n\t\r")
 _ATTR_NAME_TERMINATORS = frozenset("=>/ \n\t\r")
@@ -253,11 +278,8 @@ class HtmlTemplateEngine:
             render_context["site"] = self.config
         if context:
             render_context.update(context)
-        if render_context:
-            jinja_template = _jinja_env.from_string(template)
-            result = jinja_template.render(**render_context)
-        else:
-            result = template
+        jinja_template = _jinja_env.from_string(template)
+        result = jinja_template.render(**render_context)
         return self._render_components(result, render_context)
 
     def _render_components(self, html: str, context: dict[str, Any]) -> str:
