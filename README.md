@@ -227,6 +227,8 @@ If your project has a `static/` directory, py-ssg copies it on every build after
 
 With the default layout, reference assets from templates with paths like `/static/styles.css` or `/static/favicon.ico`.
 
+Use `{{ asset_url(...) }}` for local CSS, JS, images, and `syntax.css` so rebuilt assets get a new query-string version and browsers fetch the latest file instead of serving a stale cached copy.
+
 When using `static_dir_output = "root"`, avoid filename collisions with generated pages and assets such as `index.html`, `feed.xml`, and `syntax.css` unless you intentionally want the static file to take precedence.
 
 ## Markdown Content
@@ -357,6 +359,7 @@ Templates also have these built-in globals and filters:
 |--------|------|-------------|
 | `post_url(post)` | global | Returns the canonical URL for a content item, such as `/blog/hello-world/` |
 | `is_blog_post(post)` | global | Returns `true` when the content file lives under `content/blog/` |
+| `asset_url(path)` | global | Appends a build version query string to local output assets such as `/static/styles.css` or `syntax.css` |
 | `slug` | filter | Slugifies text by lowercasing it, removing special characters, and replacing spaces with hyphens |
 | `date_format` | filter | Formats ISO date or datetime strings with `strftime` syntax, for example `{{ post.timestamp\|date_format('%Y-%m-%d') }}` |
 | `excerpt` | filter | Strips HTML, normalizes whitespace, and truncates text with `...` |
@@ -368,7 +371,8 @@ Templates also have these built-in globals and filters:
 <html>
 <head>
   <title>{{ site.name }}</title>
-  <link rel="stylesheet" href="syntax.css">
+  <link rel="stylesheet" href="{{ asset_url('syntax.css') }}">
+  <link rel="stylesheet" href="{{ asset_url('/static/styles.css') }}">
 </head>
 <body>
   <Navbar homeClass="active" />
@@ -493,7 +497,7 @@ def hello():
 The build generates an `output/syntax.css` file with dual-theme support using `@media (prefers-color-scheme)`. Link it in your templates:
 
 ```html
-<link rel="stylesheet" href="syntax.css">
+<link rel="stylesheet" href="{{ asset_url('syntax.css') }}">
 ```
 
 Any language supported by Pygments can be used. If a language is not recognized, the block falls back to plain text. You can use any valid [Pygments style name](https://pygments.org/styles/) for `theme_light` and `theme_dark`.

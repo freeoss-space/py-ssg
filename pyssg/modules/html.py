@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from jinja2 import BaseLoader, Environment, Template
 
@@ -46,6 +46,11 @@ class ComponentMatch:
     end: int
     attrs: dict[str, str]
     children: str = field(default="")
+
+
+class AssetManifest(Protocol):
+    def asset_url(self, path: str) -> str:
+        pass
 
 
 def _build_line_offsets(html: str) -> list[int]:
@@ -247,11 +252,13 @@ class HtmlTemplateEngine:
         components_dir: Path | None = None,
         component_names: list[str] | None = None,
         config: SiteConfig | None = None,
+        asset_manifest: AssetManifest | None = None,
     ) -> None:
         self.templates_dir = templates_dir
         self.components_dir = components_dir
         self.component_names = component_names or []
         self.config = config
+        self.asset_manifest = asset_manifest
         self._component_set: set[str] = set(self.component_names)
         self._component_cache: dict[str, Template] = {}
 
@@ -276,6 +283,8 @@ class HtmlTemplateEngine:
         render_context: dict[str, Any] = {}
         if self.config:
             render_context["site"] = self.config
+        if self.asset_manifest is not None:
+            render_context["asset_url"] = self.asset_manifest.asset_url
         if context:
             render_context.update(context)
         jinja_template = _jinja_env.from_string(template)

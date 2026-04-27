@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
+from pyssg.commands.build import AssetVersionManifest
 from pyssg.modules.config import AuthorConfig, SiteConfig
 from pyssg.modules.html import HtmlTemplateEngine
 from pyssg.modules.markdown import MarkdownContent
@@ -230,6 +231,22 @@ class TestRenderTemplate:
         )
 
         assert result == "Hello wo..."
+
+    def test_asset_url_available_in_template_when_manifest_provided(self):
+        engine = HtmlTemplateEngine(
+            templates_dir=Path("/templates"),
+            components_dir=Path("/components"),
+            component_names=[],
+            asset_manifest=AssetVersionManifest(
+                versions={"static/site.css": "abc123", "syntax.css": "def456"}
+            ),
+        )
+
+        result = engine.render(
+            "{{ asset_url('/static/site.css') }} {{ asset_url('syntax.css') }}"
+        )
+
+        assert result == "/static/site.css?v=abc123 syntax.css?v=def456"
 
 
 class TestSiteConfigInTemplates:

@@ -1,4 +1,6 @@
+import hashlib
 import os
+import posixpath
 import shutil
 import time
 from collections import defaultdict
@@ -7,6 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pyssg.commands.base_command import BaseCommand
 from pyssg.modules.build_script import BuildContext, BuildScript
@@ -96,6 +99,50 @@ def _copy_static_assets(
     dest = mode.destination(output_dir)
     shutil.copytree(static_dir, dest, dirs_exist_ok=os.path.exists(dest))
     return mode.output_path
+
+
+def _compute_asset_version(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()[:12]
+
+
+def _normalize_asset_lookup_path(path: str) -> str:
+    normalized = posixpath.normpath(path.lstrip("/"))
+    return "" if normalized == "." else normalized
+
+
+@dataclass(frozen=True)
+class AssetVersionManifest:
+    versions: Mapping[str, str]
+
+    def asset_url(self, path: str) -> str:
+        parsed = urlsplit(path)
+        if parsed.scheme != "" or parsed.netloc != "":
+            return path
+
+        lookup_path = _normalize_asset_lookup_path(parsed.path)
+        if lookup_path == "":
+            return path
+
+        version = self.versions.get(lookup_path)
+        if version is None:
+            return path
+
+        query_items = parse_qsl(parsed.query, keep_blank_values=True)
+        query_items.append(("v", version))
+        return urlunsplit(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                urlencode(query_items),
+                parsed.fragment,
+            )
+        )
+
+    def fingerprint(self) -> str:
+        return "|".join(
+            f"{path}={version}" for path, version in sorted(self.versions.items())
+        )
 
 
 @dataclass
@@ -259,12 +306,19 @@ class BuildCommand(BaseCommand):
         self._info("Rendering templates")
         rendering_start = time.perf_counter()
         component_names = _discover_components(paths.components_dir)
+        asset_manifest = self._build_asset_manifest(
+            paths=paths,
+            config=config,
+            highlighter=highlighter,
+        )
         engine = HtmlTemplateEngine(
             templates_dir=paths.templates_dir,
             components_dir=paths.components_dir,
             component_names=component_names,
             config=config,
+            asset_manifest=asset_manifest,
         )
+        cache_seed = asset_manifest.fingerprint()
         self._detail(f"Discovered {len(component_names)} components")
         if not self._dry_run:
             os.makedirs(paths.output_dir, exist_ok=True)
@@ -282,6 +336,7 @@ class BuildCommand(BaseCommand):
             collection=collection,
             cache=cache,
             content_sort=config.content_sort,
+            cache_seed=cache_seed,
         )
         (
             content_total_files,
@@ -332,6 +387,40 @@ class BuildCommand(BaseCommand):
                 ignore=shutil.ignore_patterns("*.html"),
             )
 
+    def _build_asset_manifest(
+        self,
+        paths: BuildPaths,
+        config: SiteConfig,
+        highlighter: SyntaxHighlighter | None,
+    ) -> AssetVersionManifest:
+        versions: dict[str, str] = {}
+
+        for asset_path in sorted(paths.templates_dir.rglob("*")):
+            if not asset_path.is_file() or asset_path.suffix == ".html":
+                continue
+            output_path = asset_path.relative_to(paths.templates_dir).as_posix()
+            versions[output_path] = _compute_asset_version(asset_path.read_bytes())
+
+        if highlighter:
+            versions["syntax.css"] = _compute_asset_version(
+                highlighter.get_stylesheet().encode("utf-8")
+            )
+
+        static_dir = paths.project_dir / config.static_dir
+        if static_dir.is_dir():
+            static_mode = StaticDirOutputMode(config.static_dir_output)
+            for asset_path in sorted(static_dir.rglob("*")):
+                if not asset_path.is_file():
+                    continue
+                rel_path = asset_path.relative_to(static_dir).as_posix()
+                if static_mode is StaticDirOutputMode.ROOT:
+                    output_path = rel_path
+                else:
+                    output_path = f"{static_mode.value}/{rel_path}"
+                versions[output_path] = _compute_asset_version(asset_path.read_bytes())
+
+        return AssetVersionManifest(versions=MappingProxyType(versions))
+
     def _iter_template_filenames(self, templates_dir: Path) -> list[str]:
         return sorted(
             str(path.relative_to(templates_dir).as_posix())
@@ -347,6 +436,7 @@ class BuildCommand(BaseCommand):
         collection: MarkdownCollection,
         cache: BuildCache,
         content_sort: str,
+        cache_seed: str,
     ) -> tuple[int, int, int]:
         total_files = 0
         built_files = 0
@@ -364,6 +454,7 @@ class BuildCommand(BaseCommand):
                 sorted_content=sorted_content,
                 tag_map=tag_map,
                 cache=cache,
+                cache_seed=cache_seed,
             )
             if result.cached:
                 cached_files += 1
@@ -476,13 +567,15 @@ class BuildCommand(BaseCommand):
         sorted_content: list[MarkdownContent],
         tag_map: TagMap,
         cache: BuildCache,
+        cache_seed: str,
     ) -> TemplateRenderResult:
         filepath = os.path.join(templates_dir, filename)
         with open(filepath) as f:
             template = f.read()
 
+        cache_content = self._template_cache_content(template, cache_seed)
         is_dynamic = cache.has_dynamic_constructs(template)
-        if not is_dynamic and not cache.needs_rebuild(filename, template):
+        if not is_dynamic and not cache.needs_rebuild(filename, cache_content):
             return TemplateRenderResult(built=False, cached=True)
 
         rendered = engine.render(
@@ -498,8 +591,13 @@ class BuildCommand(BaseCommand):
             f.write(rendered)
 
         if not is_dynamic:
-            cache.update(filename, template)
+            cache.update(filename, cache_content)
         return TemplateRenderResult(built=True, cached=False)
+
+    def _template_cache_content(self, template: str, cache_seed: str) -> str:
+        if cache_seed == "":
+            return template
+        return f"{template}\0{cache_seed}"
 
     def _sort_content(
         self, collection: MarkdownCollection, content_sort: str
