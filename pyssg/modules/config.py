@@ -102,6 +102,19 @@ class ServerConfig:
 
 
 @dataclass
+class TagPagesConfig:
+    template: str = ""
+    output_dir: str = "tags"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> TagPagesConfig:
+        return cls(
+            template=str(data.get("template", "")),
+            output_dir=str(data.get("output_dir", "tags")),
+        )
+
+
+@dataclass
 class SiteConfig:
     name: str = ""
     url: str = ""
@@ -116,6 +129,7 @@ class SiteConfig:
     syntax: SyntaxConfig = field(default_factory=SyntaxConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     toc: TocConfig = field(default_factory=TocConfig)
+    tag_pages: TagPagesConfig = field(default_factory=TagPagesConfig)
 
     @classmethod
     def load(cls, project_dir: Path) -> SiteConfig:
@@ -133,6 +147,7 @@ class SiteConfig:
         syntax = SyntaxConfig.from_dict(data.get("syntax", {}))
         server = ServerConfig.from_dict(data.get("server", {}))
         toc = TocConfig.from_dict(data.get("toc", {}))
+        tag_pages = TagPagesConfig.from_dict(data.get("tag_pages", {}))
         static_dir_output = _validate_static_dir_output(
             str(data.get("static_dir_output", "static"))
         )
@@ -153,4 +168,5 @@ class SiteConfig:
             syntax=syntax,
             server=server,
             toc=toc,
+            tag_pages=tag_pages,
         )

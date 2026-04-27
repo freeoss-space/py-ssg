@@ -198,6 +198,10 @@ theme_dark = "monokai"          # Pygments theme for dark mode
 enabled = false                 # Table of contents generation
 max_depth = 3                   # Max heading depth to include
 
+[py-ssg.tag_pages]
+template = ""                   # Render-only template used for each generated tag page
+output_dir = "tags"             # Output base path under output/
+
 [[py-ssg.authors]]
 name = "Your Name"
 email = "your@email.com"
@@ -330,6 +334,37 @@ Quirks:
 - Content-page outputs always follow the canonical route from `post.url`.
 - Content-page rendering is currently not template-cached; these pages rebuild every time.
 - If `template` points to a normal `.html` page template instead of `*.tmpl.html`, py-ssg warns because that template will also render as its own standalone page.
+
+### Tag Pages
+
+You can generate one page per tag from frontmatter tags by configuring a render-only template:
+
+```toml
+[py-ssg.tag_pages]
+template = "tags/list.tmpl.html"
+output_dir = "tags"
+```
+
+For tags like `python` and `release notes`, py-ssg renders:
+
+```text
+output/tags/python/index.html
+output/tags/release-notes/index.html
+```
+
+Each tag page receives:
+
+- `site`
+- `content`
+- `tags`
+- `tag`
+
+The `tag` object exposes:
+
+- `tag.name`
+- `tag.slug`
+- `tag.output_filename`
+- `tag.posts`
 
 ## Templates
 

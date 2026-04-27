@@ -8,11 +8,18 @@ from pyssg.commands.build import (
     BuildCommand,
     BuildPaths,
     RenderSummary,
+    TagPage,
     TemplateRenderResult,
     _copy_static_assets,
     _discover_components,
 )
-from pyssg.modules.config import FeedConfig, SiteConfig, SyntaxConfig, TocConfig
+from pyssg.modules.config import (
+    FeedConfig,
+    SiteConfig,
+    SyntaxConfig,
+    TagPagesConfig,
+    TocConfig,
+)
 from pyssg.modules.markdown import MarkdownCollection, MarkdownContent
 
 TEST_PATH = "pyssg.commands.build"
@@ -29,9 +36,11 @@ def _default_config(
     cache: bool = True,
     syntax: SyntaxConfig | None = None,
     toc: TocConfig | None = None,
+    tag_pages: TagPagesConfig | None = None,
 ) -> SiteConfig:
     syntax = syntax or SyntaxConfig(enabled=False)
     toc = toc or TocConfig(enabled=False)
+    tag_pages = tag_pages or TagPagesConfig()
     return SiteConfig(
         name=name,
         url=url,
@@ -42,6 +51,7 @@ def _default_config(
         cache=cache,
         syntax=syntax,
         toc=toc,
+        tag_pages=tag_pages,
     )
 
 
@@ -336,6 +346,39 @@ def test_build_tag_map_groups_posts_by_tag_in_sorted_order() -> None:
         "release": (newest,),
         "notes": (undated,),
     }
+
+
+def test_build_tag_pages_uses_slugged_output_paths() -> None:
+    command = SilentBuildCommand()
+    python_post = MarkdownContent(filename="python.md", html="", tags=["Python Tips"])
+    release_post = MarkdownContent(
+        filename="release.md", html="", tags=["Release Notes"]
+    )
+
+    tag_pages = command._build_tag_pages(
+        MappingProxyType(
+            {
+                "Python Tips": (python_post,),
+                "Release Notes": (release_post,),
+            }
+        ),
+        output_dir="tags",
+    )
+
+    assert tag_pages == (
+        TagPage(
+            name="Python Tips",
+            slug="python-tips",
+            output_filename="tags/python-tips/index.html",
+            posts=(python_post,),
+        ),
+        TagPage(
+            name="Release Notes",
+            slug="release-notes",
+            output_filename="tags/release-notes/index.html",
+            posts=(release_post,),
+        ),
+    )
 
 
 @patch.object(BuildCommand, "_info")
@@ -807,6 +850,65 @@ def test_render_content_pages_generates_pages_from_content_templates(
     assert (output_dir / "blog" / "hello-world" / "index.html").read_text(
         encoding="utf-8"
     ) == "<article>Hello World</article>"
+
+
+def test_render_tag_pages_generates_a_page_per_tag(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    tags_dir = templates_dir / "tags"
+    tags_dir.mkdir()
+    (tags_dir / "list.tmpl.html").write_text(
+        "<h1>{{ tag.name }}</h1>{% for post in tag.posts %}<article>{{ post.title }}</article>{% endfor %}",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    newer = MarkdownContent(
+        filename="new.md",
+        html="",
+        title="New Post",
+        timestamp="2025-01-01",
+        tags=["python"],
+    )
+    older = MarkdownContent(
+        filename="old.md",
+        html="",
+        title="Old Post",
+        timestamp="2024-01-01",
+        tags=["python"],
+    )
+    engine = MagicMock()
+    engine.render.return_value = "<h1>python</h1><article>New Post</article>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    summary = command._render_tag_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(older, newer),
+        cache=cache,
+        content_sort="date_desc",
+        tag_pages=TagPagesConfig(template="tags/list.tmpl.html"),
+    )
+
+    assert summary == (1, 1, 0)
+    engine.render.assert_called_once_with(
+        "<h1>{{ tag.name }}</h1>{% for post in tag.posts %}<article>{{ post.title }}</article>{% endfor %}",
+        context={
+            "content": (newer, older),
+            "tags": MappingProxyType({"python": (newer, older)}),
+            "tag": TagPage(
+                name="python",
+                slug="python",
+                output_filename="tags/python/index.html",
+                posts=(newer, older),
+            ),
+        },
+    )
+    assert (output_dir / "tags" / "python" / "index.html").read_text(
+        encoding="utf-8"
+    ) == "<h1>python</h1><article>New Post</article>"
 
 
 @patch.object(BuildCommand, "_warning")

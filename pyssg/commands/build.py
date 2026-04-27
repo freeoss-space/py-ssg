@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pyssg.commands.base_command import BaseCommand
 from pyssg.modules.build_script import BuildContext, BuildScript
 from pyssg.modules.cache import BuildCache
-from pyssg.modules.config import SiteConfig
+from pyssg.modules.config import SiteConfig, TagPagesConfig
 from pyssg.modules.html import HtmlTemplateEngine
 from pyssg.modules.markdown import (
     MarkdownCollection,
@@ -25,6 +25,7 @@ from pyssg.modules.markdown import (
 )
 from pyssg.modules.rss import RssFeedGenerator
 from pyssg.modules.syntax import SyntaxHighlighter
+from pyssg.modules.template_helpers import slug
 
 
 def _discover_components(components_dir: Path) -> list[str]:
@@ -166,6 +167,14 @@ class RenderSummary:
 class TemplateRenderResult:
     built: bool
     cached: bool
+
+
+@dataclass(frozen=True)
+class TagPage:
+    name: str
+    slug: str
+    output_filename: str
+    posts: tuple[MarkdownContent, ...]
 
 
 type TagMap = Mapping[str, Sequence[MarkdownContent]]
@@ -350,6 +359,15 @@ class BuildCommand(BaseCommand):
             cache=cache,
             content_sort=config.content_sort,
         )
+        tag_total_files, tag_built_files, tag_cached_files = self._render_tag_pages(
+            templates_dir=paths.templates_dir,
+            output_dir=paths.output_dir,
+            engine=engine,
+            collection=collection,
+            cache=cache,
+            content_sort=config.content_sort,
+            tag_pages=config.tag_pages,
+        )
         if self._dry_run:
             if highlighter:
                 self._detail(
@@ -366,9 +384,9 @@ class BuildCommand(BaseCommand):
             self._copy_static_assets(paths=paths, config=config)
 
         return RenderSummary(
-            total_files=total_files + content_total_files,
-            built_files=built_files + content_built_files,
-            cached_files=cached_files + content_cached_files,
+            total_files=total_files + content_total_files + tag_total_files,
+            built_files=built_files + content_built_files + tag_built_files,
+            cached_files=cached_files + content_cached_files + tag_cached_files,
             component_names=component_names,
             rendering_time=time.perf_counter() - rendering_start,
         )
@@ -523,6 +541,62 @@ class BuildCommand(BaseCommand):
                 "only be used through frontmatter."
             )
 
+    def _build_tag_pages(self, tag_map: TagMap, output_dir: str) -> tuple[TagPage, ...]:
+        normalized_output_dir = output_dir.strip("/")
+        tag_pages: list[TagPage] = []
+        for tag_name, posts in tag_map.items():
+            tag_slug = slug(tag_name)
+            tag_output_filename = f"{tag_slug}/index.html"
+            if normalized_output_dir:
+                tag_output_filename = f"{normalized_output_dir}/{tag_output_filename}"
+            tag_pages.append(
+                TagPage(
+                    name=tag_name,
+                    slug=tag_slug,
+                    output_filename=tag_output_filename,
+                    posts=tuple(posts),
+                )
+            )
+        return tuple(tag_pages)
+
+    def _render_tag_pages(
+        self,
+        templates_dir: Path,
+        output_dir: Path,
+        engine: HtmlTemplateEngine,
+        collection: MarkdownCollection,
+        cache: BuildCache,
+        content_sort: str,
+        tag_pages: TagPagesConfig,
+    ) -> tuple[int, int, int]:
+        del cache
+        if tag_pages.template == "":
+            return 0, 0, 0
+
+        total_files = 0
+        built_files = 0
+        cached_files = 0
+        sorted_content = self._sort_content(collection, content_sort)
+        tag_map = self._build_tag_map(sorted_content)
+
+        for tag_page in self._build_tag_pages(tag_map, tag_pages.output_dir):
+            total_files += 1
+            result = self._render_tag_page(
+                template_name=tag_pages.template,
+                templates_dir=templates_dir,
+                output_dir=output_dir,
+                engine=engine,
+                sorted_content=sorted_content,
+                tag_map=tag_map,
+                tag_page=tag_page,
+            )
+            if result.cached:
+                cached_files += 1
+            if result.built:
+                built_files += 1
+
+        return total_files, built_files, cached_files
+
     def _render_content_page(
         self,
         template_name: str,
@@ -592,6 +666,38 @@ class BuildCommand(BaseCommand):
 
         if not is_dynamic:
             cache.update(filename, cache_content)
+        return TemplateRenderResult(built=True, cached=False)
+
+    def _render_tag_page(
+        self,
+        template_name: str,
+        templates_dir: Path,
+        output_dir: Path,
+        engine: HtmlTemplateEngine,
+        sorted_content: list[MarkdownContent],
+        tag_map: TagMap,
+        tag_page: TagPage,
+    ) -> TemplateRenderResult:
+        filepath = os.path.join(templates_dir, template_name)
+        with open(filepath) as f:
+            template = f.read()
+
+        rendered = engine.render(
+            template,
+            context={
+                "content": tuple(sorted_content),
+                "tags": tag_map,
+                "tag": tag_page,
+            },
+        )
+        if self._dry_run:
+            self._detail(f"Dry run: would render {tag_page.output_filename}")
+            return TemplateRenderResult(built=True, cached=False)
+        output_path = os.path.join(output_dir, tag_page.output_filename)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w") as f:
+            f.write(rendered)
+
         return TemplateRenderResult(built=True, cached=False)
 
     def _template_cache_content(self, template: str, cache_seed: str) -> str:
