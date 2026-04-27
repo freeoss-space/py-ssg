@@ -23,6 +23,10 @@ class TestInit:
         command = ServeCommand()
         assert command._port is None
 
+    def test_stores_dry_run(self):
+        command = ServeCommand(dry_run=True)
+        assert command._dry_run is True
+
 
 class TestExecute:
     @patch(f"{TEST_PATH}.SiteConfig")
@@ -198,6 +202,30 @@ class TestExecute:
 
         mock_server.stop.assert_called_once()
         mock_watcher.stop.assert_called_once()
+
+    @patch(f"{TEST_PATH}.SiteConfig")
+    @patch(f"{TEST_PATH}.Watcher")
+    @patch(f"{TEST_PATH}.Server")
+    @patch(f"{TEST_PATH}.BuildCommand")
+    @patch(f"{TEST_PATH}.Path")
+    def test_dry_run_does_not_start_server_or_watcher(
+        self,
+        mock_path,
+        mock_build_cls,
+        mock_server_cls,
+        mock_watcher_cls,
+        mock_config_cls,
+    ):
+        mock_path.cwd.return_value = Path("/project")
+        mock_config_cls.load.return_value = _default_config()
+        command = ServeCommand(port=8000, verbose=True, dry_run=True)
+
+        command.execute()
+
+        mock_build_cls.assert_called_once_with(verbose=True, dry_run=True)
+        mock_build_cls.return_value.execute.assert_called_once()
+        mock_server_cls.assert_not_called()
+        mock_watcher_cls.assert_not_called()
 
 
 class TestRebuild:

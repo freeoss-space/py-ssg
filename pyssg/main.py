@@ -20,20 +20,41 @@ def callback() -> None:
 
 
 @app.command()
-def init(folder_name: str = typer.Argument(default=".")) -> None:
-    init_command = InitCommand(folder_name=folder_name)
+def init(
+    folder_name: str = typer.Argument(default="."),
+    verbose: bool = typer.Option(default=False, help="Show additional details."),
+    dry_run: bool = typer.Option(
+        default=False, help="Preview changes without writing files."
+    ),
+) -> None:
+    init_command = InitCommand(
+        folder_name=folder_name,
+        verbose=verbose,
+        dry_run=dry_run,
+    )
     init_command.execute()
 
 
 @app.command()
-def build() -> None:
-    build_command = BuildCommand()
+def build(
+    verbose: bool = typer.Option(default=False, help="Show additional details."),
+    dry_run: bool = typer.Option(
+        default=False, help="Preview changes without writing files."
+    ),
+) -> None:
+    build_command = BuildCommand(verbose=verbose, dry_run=dry_run)
     build_command.execute()
 
 
 @app.command()
-def serve(port: int | None = typer.Option(default=None)) -> None:
-    serve_command = ServeCommand(port=port)
+def serve(
+    port: int | None = typer.Option(default=None),
+    verbose: bool = typer.Option(default=False, help="Show additional details."),
+    dry_run: bool = typer.Option(
+        default=False, help="Preview startup without writing files or serving."
+    ),
+) -> None:
+    serve_command = ServeCommand(port=port, verbose=verbose, dry_run=dry_run)
     serve_command.execute()
 
 
