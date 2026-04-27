@@ -29,6 +29,13 @@ def content_url_from_filename(filename: str) -> str:
     return f"/{route}/"
 
 
+def _read_timestamp(post: Any) -> str:
+    timestamp = post.get("timestamp", "")
+    if timestamp != "":
+        return str(timestamp)
+    return str(post.get("date", ""))
+
+
 def _to_json_safe_value(value: object) -> object:
     if value is None or isinstance(value, bool | int | float | str):
         return value
@@ -194,7 +201,7 @@ class MarkdownContent:
             filename=filename,
             html=str(render(post.content)),
             title=str(post.get("title", "")),
-            timestamp=str(post.get("timestamp", "")),
+            timestamp=_read_timestamp(post),
             tags=tags,
             author=ContentAuthor.from_post(post),
             custom_fields=custom,

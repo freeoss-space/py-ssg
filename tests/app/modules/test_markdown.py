@@ -96,6 +96,23 @@ class TestMarkdownContent:
         assert content.tags == ["python"]
         assert "<p>Body</p>" in content.html
 
+    def test_from_raw_supports_date_as_timestamp_alias(self):
+        raw = '---\ntitle: My Post\ndate: "2025-01-15"\n---\n\nBody'
+
+        content = MarkdownContent.from_raw("post.md", raw)
+
+        assert content.timestamp == "2025-01-15"
+
+    def test_from_raw_prefers_timestamp_when_date_and_timestamp_exist(self):
+        raw = (
+            '---\ntitle: My Post\ntimestamp: "2025-01-16"\n'
+            'date: "2025-01-15"\n---\n\nBody'
+        )
+
+        content = MarkdownContent.from_raw("post.md", raw)
+
+        assert content.timestamp == "2025-01-16"
+
     def test_from_raw_parses_author(self):
         raw = "---\nauthor: Jane\nauthor_email: jane@example.com\n---\n\nHi"
 
@@ -466,6 +483,21 @@ author_url: https://example.com
         assert post.author.avatar == "https://example.com/avatar.png"
         assert post.author.url == "https://example.com"
         assert "<h1>Hello World</h1>" in post.html
+
+    def test_parses_date_as_timestamp_alias(self, tmp_path):
+        md_content = """---
+title: My Post
+date: "2025-01-15"
+---
+
+# Hello World
+"""
+        (tmp_path / "post.md").write_text(md_content)
+        parser = MarkdownParser(content_dir=tmp_path)
+
+        result = parser.parse()
+
+        assert result["post.md"].timestamp == "2025-01-15"
 
     def test_parses_custom_fields(self, tmp_path):
         md_content = """---

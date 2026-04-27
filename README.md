@@ -190,6 +190,7 @@ Place `.md` files in the `content/` directory. Each file uses YAML frontmatter f
 ---
 title: My Post Title
 timestamp: "2025-01-15"
+# `date` is also accepted as an alias for `timestamp`
 tags:
   - python
   - tutorial
@@ -205,7 +206,7 @@ author_url: https://example.com
 | Field | Type | Description |
 |-------|------|-------------|
 | `title` | string | Post title |
-| `timestamp` | string | Publication date (ISO format) |
+| `timestamp` | string | Publication date (ISO format). `date` is accepted as an alias |
 | `tags` | list | List of tag strings |
 | `author` | string | Author name |
 | `author_email` | string | Author email |
@@ -223,7 +224,7 @@ Each markdown file becomes a `MarkdownContent` object available in templates:
 | `post.filename` | Path relative to `content/` (e.g., `hello-world.md` or `blog/2025/hello-world.md`) |
 | `post.html` | Rendered HTML content |
 | `post.title` | Title from frontmatter |
-| `post.timestamp` | Timestamp string from frontmatter |
+| `post.timestamp` | Timestamp string from frontmatter (`date` aliases to this field) |
 | `post.tags` | List of tag strings |
 | `post.author.name` | Author name |
 | `post.author.email` | Author email |
