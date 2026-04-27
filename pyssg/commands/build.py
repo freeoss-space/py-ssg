@@ -18,6 +18,7 @@ from pyssg.modules.markdown import (
     MarkdownContent,
     MarkdownParser,
     TocGenerator,
+    content_url_from_filename,
 )
 from pyssg.modules.rss import RssFeedGenerator
 from pyssg.modules.syntax import SyntaxHighlighter
@@ -57,7 +58,7 @@ def _content_template_name(content: MarkdownContent) -> str | None:
 
 
 def _content_output_filename(content: MarkdownContent) -> str:
-    return f"{content.filename.removesuffix('.md')}/index.html"
+    return f"{content_url_from_filename(content.filename).strip('/')}/index.html"
 
 
 class ProjectDirectory(StrEnum):

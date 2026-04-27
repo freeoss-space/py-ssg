@@ -65,6 +65,7 @@ class TestMarkdownContent:
 
         assert content.filename == "test.md"
         assert content.html == "<p>Hello</p>"
+        assert content.url == "/test/"
         assert content.title == ""
         assert content.timestamp == ""
         assert content.tags == []
@@ -83,6 +84,7 @@ class TestMarkdownContent:
         assert "<h1>Hello</h1>" in content.html
         assert "<p>World</p>" in content.html
         assert content.filename == "test.md"
+        assert content.url == "/test/"
 
     def test_from_raw_parses_frontmatter(self):
         raw = '---\ntitle: My Post\ntimestamp: "2025-01-15"\ntags:\n  - python\n---\n\nBody'
@@ -159,6 +161,11 @@ class TestMarkdownContent:
             },
         }
         json.dumps(data)
+
+    def test_url_uses_nested_content_path(self):
+        content = MarkdownContent(filename="blog/2025/hello-world.md", html="<p>Hello</p>")
+
+        assert content.url == "/blog/2025/hello-world/"
 
 
 class TestMarkdownCollection:

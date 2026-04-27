@@ -24,6 +24,11 @@ def _slugify(text: str) -> str:
     return slug
 
 
+def content_url_from_filename(filename: str) -> str:
+    route = filename.removesuffix(".md").strip("/")
+    return f"/{route}/"
+
+
 def _to_json_safe_value(value: object) -> object:
     if value is None or isinstance(value, bool | int | float | str):
         return value
@@ -157,6 +162,10 @@ class MarkdownContent:
     author: ContentAuthor = field(default_factory=ContentAuthor)
     custom_fields: SimpleNamespace = field(default_factory=SimpleNamespace)
     toc: str = ""
+
+    @property
+    def url(self) -> str:
+        return content_url_from_filename(self.filename)
 
     @classmethod
     def from_raw(
