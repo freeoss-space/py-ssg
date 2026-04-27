@@ -1,8 +1,10 @@
+import hashlib
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from pyssg.commands.build import (
+    AssetVersionManifest,
     BuildCommand,
     BuildPaths,
     RenderSummary,
@@ -177,6 +179,25 @@ def test_copy_static_assets_returns_none_when_source_missing(tmp_path: Path) -> 
     output_path = _copy_static_assets(tmp_path / "missing-static", output_dir, "static")
 
     assert output_path is None
+
+
+def test_asset_version_manifest_appends_version_to_local_asset_urls() -> None:
+    manifest = AssetVersionManifest(
+        versions={
+            "static/site.css": "abc123",
+            "syntax.css": "def456",
+        }
+    )
+
+    assert manifest.asset_url("/static/site.css") == "/static/site.css?v=abc123"
+    assert manifest.asset_url("syntax.css") == "syntax.css?v=def456"
+    assert (
+        manifest.asset_url("/static/site.css?theme=light")
+        == "/static/site.css?theme=light&v=abc123"
+    )
+    assert manifest.asset_url("https://cdn.example.com/site.css") == (
+        "https://cdn.example.com/site.css"
+    )
 
 
 @patch(f"{TEST_PATH}.Path.cwd")
@@ -449,6 +470,69 @@ def test_copy_template_directories_skips_nested_html_page_templates(
     )
 
 
+def test_build_asset_manifest_versions_template_static_and_syntax_assets(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "project"
+    templates_dir = project_dir / "templates"
+    static_dir = project_dir / "static"
+    output_dir = project_dir / "output"
+    templates_assets_dir = templates_dir / "assets"
+    templates_assets_dir.mkdir(parents=True)
+    static_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+    (templates_assets_dir / "app.css").write_text("body {}", encoding="utf-8")
+    (templates_dir / "index.html").write_text("<h1>Home</h1>", encoding="utf-8")
+    (static_dir / "site.css").write_text("html {}", encoding="utf-8")
+    paths = BuildPaths(
+        project_dir=project_dir,
+        templates_dir=templates_dir,
+        components_dir=project_dir / "components",
+        output_dir=output_dir,
+    )
+    highlighter = MagicMock()
+    highlighter.get_stylesheet.return_value = ".highlight {}"
+    command = SilentBuildCommand()
+
+    manifest = command._build_asset_manifest(paths, _default_config(), highlighter)
+
+    assert manifest.asset_url("/assets/app.css").startswith("/assets/app.css?v=")
+    assert manifest.asset_url("/static/site.css").startswith("/static/site.css?v=")
+    assert manifest.asset_url("syntax.css").startswith("syntax.css?v=")
+
+
+def test_build_asset_manifest_prefers_static_assets_for_colliding_output_paths(
+    tmp_path: Path,
+) -> None:
+    project_dir = tmp_path / "project"
+    templates_dir = project_dir / "templates"
+    static_dir = project_dir / "static"
+    output_dir = project_dir / "output"
+    templates_dir.mkdir(parents=True)
+    static_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+    (templates_dir / "shared.css").write_text("template", encoding="utf-8")
+    (static_dir / "shared.css").write_text("static", encoding="utf-8")
+    paths = BuildPaths(
+        project_dir=project_dir,
+        templates_dir=templates_dir,
+        components_dir=project_dir / "components",
+        output_dir=output_dir,
+    )
+    command = SilentBuildCommand()
+
+    manifest = command._build_asset_manifest(
+        paths,
+        _default_config(static_dir_output="root"),
+        None,
+    )
+
+    assert manifest.versions["shared.css"] == hashlib.sha256(b"static").hexdigest()[:12]
+    assert manifest.asset_url("/shared.css") == (
+        f"/shared.css?v={manifest.versions['shared.css']}"
+    )
+
+
 def test_render_template_file_builds_static_template(tmp_path: Path) -> None:
     templates_dir = tmp_path / "templates"
     templates_dir.mkdir()
@@ -471,14 +555,17 @@ def test_render_template_file_builds_static_template(tmp_path: Path) -> None:
         sorted_content=[post],
         tag_map=MappingProxyType({"python": (post,)}),
         cache=cache,
+        cache_seed="static/site.css=abc123",
     )
 
     assert result == TemplateRenderResult(built=True, cached=False)
-    engine.render.assert_called_once_with(
-        "<h1>Template</h1>",
-        context={"content": (post,), "tags": MappingProxyType({"python": (post,)})},
+    render_context = engine.render.call_args.kwargs["context"]
+    assert render_context["content"] == (post,)
+    assert render_context["tags"] == MappingProxyType({"python": (post,)})
+    cache.update.assert_called_once_with(
+        "index.html",
+        "<h1>Template</h1>\0static/site.css=abc123",
     )
-    cache.update.assert_called_once_with("index.html", "<h1>Template</h1>")
     assert (output_dir / "index.html").read_text(
         encoding="utf-8"
     ) == "<h1>Rendered</h1>"
@@ -504,11 +591,16 @@ def test_render_template_file_skips_unchanged_static_template(tmp_path: Path) ->
         sorted_content=[],
         tag_map={},
         cache=cache,
+        cache_seed="static/site.css=abc123",
     )
 
     assert result == TemplateRenderResult(built=False, cached=True)
     engine.render.assert_not_called()
     cache.update.assert_not_called()
+    cache.needs_rebuild.assert_called_once_with(
+        "index.html",
+        "<h1>Template</h1>\0static/site.css=abc123",
+    )
     assert not (output_dir / "index.html").exists()
 
 
@@ -537,6 +629,7 @@ def test_render_template_file_does_not_update_cache_for_dynamic_templates(
         sorted_content=[],
         tag_map={},
         cache=cache,
+        cache_seed="static/site.css=abc123",
     )
 
     assert result == TemplateRenderResult(built=True, cached=False)
@@ -564,6 +657,7 @@ def test_render_template_file_dry_run_does_not_write_output(tmp_path: Path) -> N
         sorted_content=[],
         tag_map={},
         cache=cache,
+        cache_seed="static/site.css=abc123",
     )
 
     assert result == TemplateRenderResult(built=True, cached=False)
@@ -593,6 +687,7 @@ def test_render_template_files_counts_only_html_files(tmp_path: Path) -> None:
         collection=_make_collection(),
         cache=cache,
         content_sort="date_desc",
+        cache_seed="",
     )
 
     assert summary == (2, 2, 0)
@@ -622,6 +717,7 @@ def test_render_template_files_skips_render_only_template_files(tmp_path: Path) 
         collection=_make_collection(),
         cache=cache,
         content_sort="date_desc",
+        cache_seed="",
     )
 
     assert summary == (1, 1, 0)
@@ -655,6 +751,7 @@ def test_render_template_files_renders_nested_html_templates(tmp_path: Path) -> 
         collection=_make_collection(),
         cache=cache,
         content_sort="date_desc",
+        cache_seed="",
     )
 
     assert summary == (2, 2, 0)
@@ -774,6 +871,7 @@ def test_render_template_files_passes_immutable_sorted_content(tmp_path: Path) -
         collection=_make_collection(older, newer),
         cache=cache,
         content_sort="date_desc",
+        cache_seed="",
     )
 
     render_context = engine.render.call_args.kwargs["context"]
@@ -813,6 +911,7 @@ def test_render_template_files_passes_tags_mapping_to_templates(tmp_path: Path) 
         collection=_make_collection(older, newer),
         cache=cache,
         content_sort="date_desc",
+        cache_seed="",
     )
 
     render_context = engine.render.call_args.kwargs["context"]
