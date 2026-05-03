@@ -8,11 +8,18 @@ from pyssg.commands.build import (
     BuildCommand,
     BuildPaths,
     RenderSummary,
+    TagPage,
     TemplateRenderResult,
     _copy_static_assets,
     _discover_components,
 )
-from pyssg.modules.config import FeedConfig, SiteConfig, SyntaxConfig, TocConfig
+from pyssg.modules.config import (
+    FeedConfig,
+    SiteConfig,
+    SyntaxConfig,
+    TagPagesConfig,
+    TocConfig,
+)
 from pyssg.modules.markdown import MarkdownCollection, MarkdownContent
 
 TEST_PATH = "pyssg.commands.build"
@@ -29,9 +36,11 @@ def _default_config(
     cache: bool = True,
     syntax: SyntaxConfig | None = None,
     toc: TocConfig | None = None,
+    tag_pages: TagPagesConfig | None = None,
 ) -> SiteConfig:
     syntax = syntax or SyntaxConfig(enabled=False)
     toc = toc or TocConfig(enabled=False)
+    tag_pages = tag_pages or TagPagesConfig()
     return SiteConfig(
         name=name,
         url=url,
@@ -42,6 +51,7 @@ def _default_config(
         cache=cache,
         syntax=syntax,
         toc=toc,
+        tag_pages=tag_pages,
     )
 
 
@@ -336,6 +346,73 @@ def test_build_tag_map_groups_posts_by_tag_in_sorted_order() -> None:
         "release": (newest,),
         "notes": (undated,),
     }
+
+
+def test_build_tag_pages_uses_slugged_output_paths() -> None:
+    command = SilentBuildCommand()
+    python_post = MarkdownContent(filename="python.md", html="", tags=["Python Tips"])
+    release_post = MarkdownContent(
+        filename="release.md", html="", tags=["Release Notes"]
+    )
+
+    tag_pages = command._build_tag_pages(
+        MappingProxyType(
+            {
+                "Python Tips": (python_post,),
+                "Release Notes": (release_post,),
+            }
+        ),
+        output_dir="tags",
+    )
+
+    assert tag_pages == (
+        TagPage(
+            name="Python Tips",
+            slug="python-tips",
+            output_filename="tags/python-tips/index.html",
+            posts=(python_post,),
+        ),
+        TagPage(
+            name="Release Notes",
+            slug="release-notes",
+            output_filename="tags/release-notes/index.html",
+            posts=(release_post,),
+        ),
+    )
+
+
+@patch.object(BuildCommand, "_warning")
+def test_build_tag_pages_warns_and_skips_tags_with_empty_slug(
+    mock_warning: MagicMock,
+) -> None:
+    command = SilentBuildCommand()
+    post = MarkdownContent(filename="post.md", html="", tags=["!!!"])
+
+    tag_pages = command._build_tag_pages(
+        MappingProxyType({"!!!": (post,)}),
+        output_dir="tags",
+    )
+
+    assert tag_pages == ()
+    mock_warning.assert_called_once()
+
+
+@patch.object(BuildCommand, "_warning")
+def test_build_tag_pages_warns_and_skips_duplicate_slugs(
+    mock_warning: MagicMock,
+) -> None:
+    command = SilentBuildCommand()
+    c_post = MarkdownContent(filename="c.md", html="", tags=["C"])
+    cpp_post = MarkdownContent(filename="cpp.md", html="", tags=["C++"])
+
+    tag_pages = command._build_tag_pages(
+        MappingProxyType({"C": (c_post,), "C++": (cpp_post,)}),
+        output_dir="tags",
+    )
+
+    assert len(tag_pages) == 1
+    assert tag_pages[0].name == "C"
+    mock_warning.assert_called_once()
 
 
 @patch.object(BuildCommand, "_info")
@@ -807,6 +884,137 @@ def test_render_content_pages_generates_pages_from_content_templates(
     assert (output_dir / "blog" / "hello-world" / "index.html").read_text(
         encoding="utf-8"
     ) == "<article>Hello World</article>"
+
+
+def test_render_tag_pages_generates_a_page_per_tag(tmp_path: Path) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    tags_dir = templates_dir / "tags"
+    tags_dir.mkdir()
+    (tags_dir / "list.tmpl.html").write_text(
+        "<h1>{{ tag.name }}</h1>{% for post in tag.posts %}<article>{{ post.title }}</article>{% endfor %}",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    newer = MarkdownContent(
+        filename="new.md",
+        html="",
+        title="New Post",
+        timestamp="2025-01-01",
+        tags=["python"],
+    )
+    older = MarkdownContent(
+        filename="old.md",
+        html="",
+        title="Old Post",
+        timestamp="2024-01-01",
+        tags=["python"],
+    )
+    engine = MagicMock()
+    engine.render.return_value = "<h1>python</h1><article>New Post</article>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    summary = command._render_tag_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(older, newer),
+        cache=cache,
+        content_sort="date_desc",
+        tag_pages=TagPagesConfig(template="tags/list.tmpl.html"),
+    )
+
+    assert summary == (1, 1, 0)
+    engine.render.assert_called_once_with(
+        "<h1>{{ tag.name }}</h1>{% for post in tag.posts %}<article>{{ post.title }}</article>{% endfor %}",
+        context={
+            "content": (newer, older),
+            "tags": MappingProxyType({"python": (newer, older)}),
+            "tag": TagPage(
+                name="python",
+                slug="python",
+                output_filename="tags/python/index.html",
+                posts=(newer, older),
+            ),
+        },
+    )
+    assert (output_dir / "tags" / "python" / "index.html").read_text(
+        encoding="utf-8"
+    ) == "<h1>python</h1><article>New Post</article>"
+
+
+def test_render_tag_pages_reads_template_file_once_for_multiple_tags(
+    tmp_path: Path,
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    template_file = templates_dir / "tags.tmpl.html"
+    template_file.write_text("<h1>{{ tag.name }}</h1>", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post1 = MarkdownContent(filename="p1.md", html="", tags=["python"])
+    post2 = MarkdownContent(filename="p2.md", html="", tags=["rust"])
+    engine = MagicMock()
+    engine.render.return_value = "<h1>tag</h1>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    original_open = open
+    opens_of_template: list[str] = []
+
+    def tracking_open(file, *args, **kwargs):
+        if str(template_file) == str(file):
+            opens_of_template.append(str(file))
+        return original_open(file, *args, **kwargs)
+
+    with patch("builtins.open", side_effect=tracking_open):
+        command._render_tag_pages(
+            templates_dir=templates_dir,
+            output_dir=output_dir,
+            engine=engine,
+            collection=_make_collection(post1, post2),
+            cache=cache,
+            content_sort="date_desc",
+            tag_pages=TagPagesConfig(template="tags.tmpl.html"),
+        )
+
+    assert len(opens_of_template) == 1
+
+
+@patch.object(BuildCommand, "_warning")
+def test_render_tag_pages_warns_when_template_is_not_render_only(
+    mock_warning: MagicMock, tmp_path: Path
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "tags.html").write_text(
+        "<h1>{{ tag.name }}</h1>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post = MarkdownContent(filename="p.md", html="", tags=["python"])
+    engine = MagicMock()
+    engine.render.return_value = "<h1>python</h1>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    command._render_tag_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(post),
+        cache=cache,
+        content_sort="date_desc",
+        tag_pages=TagPagesConfig(template="tags.html"),
+    )
+
+    mock_warning.assert_called_once_with(
+        "Tag pages template tags.html is not render-only and will also be "
+        "rendered as a standalone page. Rename it to tags.tmpl.html if it "
+        "should only be used for tag pages."
+    )
 
 
 @patch.object(BuildCommand, "_warning")

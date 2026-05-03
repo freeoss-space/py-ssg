@@ -20,6 +20,10 @@ theme_dark = "monokai"
 enabled = false
 max_depth = 3
 
+[py-ssg.tag_pages]
+template = ""
+output_dir = "tags"
+
 [[py-ssg.authors]]
 name = "Your Name"
 email = "your@email.com"

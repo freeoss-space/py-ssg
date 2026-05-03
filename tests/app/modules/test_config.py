@@ -9,6 +9,7 @@ from pyssg.modules.config import (
     ServerConfig,
     SiteConfig,
     SyntaxConfig,
+    TagPagesConfig,
     TocConfig,
 )
 
@@ -100,6 +101,28 @@ class TestServerConfig:
         assert config.port == 8000
 
 
+class TestTagPagesConfig:
+    def test_default_values(self):
+        config = TagPagesConfig()
+
+        assert config.template == ""
+        assert config.output_dir == "tags"
+
+    def test_from_dict(self):
+        config = TagPagesConfig.from_dict(
+            {"template": "tags/list.tmpl.html", "output_dir": "topics"}
+        )
+
+        assert config.template == "tags/list.tmpl.html"
+        assert config.output_dir == "topics"
+
+    def test_from_dict_defaults(self):
+        config = TagPagesConfig.from_dict({})
+
+        assert config.template == ""
+        assert config.output_dir == "tags"
+
+
 class TestSiteConfig:
     def test_default_values(self):
         config = SiteConfig()
@@ -116,6 +139,7 @@ class TestSiteConfig:
         assert config.cache is True
         assert config.syntax == SyntaxConfig()
         assert config.server == ServerConfig()
+        assert config.tag_pages == TagPagesConfig()
 
     def test_from_dict_full(self):
         data = {
@@ -129,6 +153,10 @@ class TestSiteConfig:
             "cache": False,
             "authors": [{"name": "Jane", "email": "jane@example.com"}],
             "feeds": [{"title": "Feed", "output": "feed.xml"}],
+            "tag_pages": {
+                "template": "tags/list.tmpl.html",
+                "output_dir": "topics",
+            },
         }
 
         config = SiteConfig.from_dict(data)
@@ -146,6 +174,10 @@ class TestSiteConfig:
         assert config.authors[0].email == "jane@example.com"
         assert len(config.feeds) == 1
         assert config.feeds[0].title == "Feed"
+        assert config.tag_pages == TagPagesConfig(
+            template="tags/list.tmpl.html",
+            output_dir="topics",
+        )
 
     def test_from_dict_defaults(self):
         config = SiteConfig.from_dict({})
@@ -162,6 +194,7 @@ class TestSiteConfig:
         assert config.cache is True
         assert config.syntax == SyntaxConfig()
         assert config.server == ServerConfig()
+        assert config.tag_pages == TagPagesConfig()
 
     def test_from_dict_raises_for_invalid_static_dir_output(self):
         with pytest.raises(
@@ -246,6 +279,26 @@ class TestSiteConfig:
         assert len(config.feeds) == 2
         assert config.feeds[0].title == "All"
         assert config.feeds[1].tags == ["tech"]
+
+    def test_from_dict_tag_pages_section(self):
+        config = SiteConfig.from_dict(
+            {
+                "tag_pages": {
+                    "template": "tags/list.tmpl.html",
+                    "output_dir": "topics",
+                }
+            }
+        )
+
+        assert config.tag_pages == TagPagesConfig(
+            template="tags/list.tmpl.html",
+            output_dir="topics",
+        )
+
+    def test_from_dict_tag_pages_defaults_when_missing(self):
+        config = SiteConfig.from_dict({})
+
+        assert config.tag_pages == TagPagesConfig()
 
 
 class TestSiteConfigLoad:
