@@ -544,8 +544,21 @@ class BuildCommand(BaseCommand):
     def _build_tag_pages(self, tag_map: TagMap, output_dir: str) -> tuple[TagPage, ...]:
         normalized_output_dir = output_dir.strip("/")
         tag_pages: list[TagPage] = []
+        seen_slugs: set[str] = set()
         for tag_name, posts in tag_map.items():
             tag_slug = slug(tag_name)
+            if not tag_slug:
+                self._warning(
+                    f"Tag {tag_name!r} produces an empty slug and will be skipped."
+                )
+                continue
+            if tag_slug in seen_slugs:
+                self._warning(
+                    f"Tag {tag_name!r} produces slug {tag_slug!r} which collides "
+                    "with an existing tag and will be skipped."
+                )
+                continue
+            seen_slugs.add(tag_slug)
             tag_output_filename = f"{tag_slug}/index.html"
             if normalized_output_dir:
                 tag_output_filename = f"{normalized_output_dir}/{tag_output_filename}"
@@ -573,17 +586,28 @@ class BuildCommand(BaseCommand):
         if tag_pages.template == "":
             return 0, 0, 0
 
+        if not _is_render_only_template(tag_pages.template):
+            base = tag_pages.template.removesuffix(".html")
+            self._warning(
+                f"Tag pages template {tag_pages.template} is not render-only and will "
+                "also be rendered as a standalone page. Rename it to "
+                f"{base}.tmpl.html if it should only be used for tag pages."
+            )
+
         total_files = 0
         built_files = 0
         cached_files = 0
         sorted_content = self._sort_content(collection, content_sort)
         tag_map = self._build_tag_map(sorted_content)
 
+        filepath = os.path.join(templates_dir, tag_pages.template)
+        with open(filepath) as f:
+            template = f.read()
+
         for tag_page in self._build_tag_pages(tag_map, tag_pages.output_dir):
             total_files += 1
             result = self._render_tag_page(
-                template_name=tag_pages.template,
-                templates_dir=templates_dir,
+                template=template,
                 output_dir=output_dir,
                 engine=engine,
                 sorted_content=sorted_content,
@@ -670,18 +694,13 @@ class BuildCommand(BaseCommand):
 
     def _render_tag_page(
         self,
-        template_name: str,
-        templates_dir: Path,
+        template: str,
         output_dir: Path,
         engine: HtmlTemplateEngine,
         sorted_content: list[MarkdownContent],
         tag_map: TagMap,
         tag_page: TagPage,
     ) -> TemplateRenderResult:
-        filepath = os.path.join(templates_dir, template_name)
-        with open(filepath) as f:
-            template = f.read()
-
         rendered = engine.render(
             template,
             context={

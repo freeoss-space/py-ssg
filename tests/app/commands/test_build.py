@@ -381,6 +381,40 @@ def test_build_tag_pages_uses_slugged_output_paths() -> None:
     )
 
 
+@patch.object(BuildCommand, "_warning")
+def test_build_tag_pages_warns_and_skips_tags_with_empty_slug(
+    mock_warning: MagicMock,
+) -> None:
+    command = SilentBuildCommand()
+    post = MarkdownContent(filename="post.md", html="", tags=["!!!"])
+
+    tag_pages = command._build_tag_pages(
+        MappingProxyType({"!!!": (post,)}),
+        output_dir="tags",
+    )
+
+    assert tag_pages == ()
+    mock_warning.assert_called_once()
+
+
+@patch.object(BuildCommand, "_warning")
+def test_build_tag_pages_warns_and_skips_duplicate_slugs(
+    mock_warning: MagicMock,
+) -> None:
+    command = SilentBuildCommand()
+    c_post = MarkdownContent(filename="c.md", html="", tags=["C"])
+    cpp_post = MarkdownContent(filename="cpp.md", html="", tags=["C++"])
+
+    tag_pages = command._build_tag_pages(
+        MappingProxyType({"C": (c_post,), "C++": (cpp_post,)}),
+        output_dir="tags",
+    )
+
+    assert len(tag_pages) == 1
+    assert tag_pages[0].name == "C"
+    mock_warning.assert_called_once()
+
+
 @patch.object(BuildCommand, "_info")
 @patch(f"{TEST_PATH}.MarkdownParser")
 @patch(f"{TEST_PATH}.os.cpu_count")
@@ -909,6 +943,78 @@ def test_render_tag_pages_generates_a_page_per_tag(tmp_path: Path) -> None:
     assert (output_dir / "tags" / "python" / "index.html").read_text(
         encoding="utf-8"
     ) == "<h1>python</h1><article>New Post</article>"
+
+
+def test_render_tag_pages_reads_template_file_once_for_multiple_tags(
+    tmp_path: Path,
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    template_file = templates_dir / "tags.tmpl.html"
+    template_file.write_text("<h1>{{ tag.name }}</h1>", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post1 = MarkdownContent(filename="p1.md", html="", tags=["python"])
+    post2 = MarkdownContent(filename="p2.md", html="", tags=["rust"])
+    engine = MagicMock()
+    engine.render.return_value = "<h1>tag</h1>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    original_open = open
+    opens_of_template: list[str] = []
+
+    def tracking_open(file, *args, **kwargs):
+        if str(template_file) == str(file):
+            opens_of_template.append(str(file))
+        return original_open(file, *args, **kwargs)
+
+    with patch("builtins.open", side_effect=tracking_open):
+        command._render_tag_pages(
+            templates_dir=templates_dir,
+            output_dir=output_dir,
+            engine=engine,
+            collection=_make_collection(post1, post2),
+            cache=cache,
+            content_sort="date_desc",
+            tag_pages=TagPagesConfig(template="tags.tmpl.html"),
+        )
+
+    assert len(opens_of_template) == 1
+
+
+@patch.object(BuildCommand, "_warning")
+def test_render_tag_pages_warns_when_template_is_not_render_only(
+    mock_warning: MagicMock, tmp_path: Path
+) -> None:
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "tags.html").write_text(
+        "<h1>{{ tag.name }}</h1>", encoding="utf-8"
+    )
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    post = MarkdownContent(filename="p.md", html="", tags=["python"])
+    engine = MagicMock()
+    engine.render.return_value = "<h1>python</h1>"
+    cache = MagicMock()
+    command = SilentBuildCommand()
+
+    command._render_tag_pages(
+        templates_dir=templates_dir,
+        output_dir=output_dir,
+        engine=engine,
+        collection=_make_collection(post),
+        cache=cache,
+        content_sort="date_desc",
+        tag_pages=TagPagesConfig(template="tags.html"),
+    )
+
+    mock_warning.assert_called_once_with(
+        "Tag pages template tags.html is not render-only and will also be "
+        "rendered as a standalone page. Rename it to tags.tmpl.html if it "
+        "should only be used for tag pages."
+    )
 
 
 @patch.object(BuildCommand, "_warning")
